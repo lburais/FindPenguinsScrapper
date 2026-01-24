@@ -146,6 +146,7 @@ def parse_profile(soup):
     picture = pic_el["src"] if pic_el and pic_el.has_attr("src") else ""
     if picture.startswith("//"):
         picture = "https:" + picture
+    # todo: download picture
 
     return {
         "name": name,
@@ -201,6 +202,9 @@ def parse_trips(soup, id):
                     avatar = "https:" + avatar
                 elif avatar.startswith("/"):
                     avatar = urljoin(BASE_URL, avatar)
+
+                # todo: download avatar
+
                 companions.append({"id": uid, "name": clean_text(name_alt), "avatar": avatar})
 
         trips.append({
@@ -226,6 +230,10 @@ def parse_trip(soup, photos_dir):
         title_el = fp.select_one("h2, h3, .title, .footprint-title")
         date_el = fp.select_one("time, .date")
         text_el = fp.select_one(".text, .body, .description, .footprint-text, p")
+        # todo: merge with .text-private
+        # todo: date is desc
+        # todo: weather is .date after in France
+        # todo: title is h2
 
         title = clean_text(title_el.get_text()) if title_el else ""
         date = clean_text(date_el.get_text()) if date_el else ""
@@ -248,7 +256,12 @@ def parse_trip(soup, photos_dir):
             except Exception as e:
                 print(f"Photo download failed: {src} -> {e}")
 
-        footprints.append({"title": title, "date": date, "text": text, "photos": photos})
+        footprints.append({
+            "title": title, 
+            "date": date, 
+            "weather": "",
+            "text": text, 
+            "photos": photos})
     return footprints
 
 # ##############################################################################################
