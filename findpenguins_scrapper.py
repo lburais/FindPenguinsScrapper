@@ -7,6 +7,7 @@ Parses profile HTML, follows trip links, downloads photos (no _l/_m_s/_t_s suffi
 import os
 import sys
 import re
+import unicodedata
 import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
@@ -63,13 +64,23 @@ def load_page( session, page_url, dir ):
 
     parts = urlparse(page_url)
     dirname, filename = os.path.split(parts.path)
-
-    page_html = os.path.join(dir, filename + ".html")
         
     print(f"Getting page [{page_url}] ...")
     resp = session.get(page_url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
+
+    file_stem = filename
+    if "/trip/" in parts.path:
+        title_el = soup.select_one("h1.headline")
+        title = " ".join(title_el.get_text().split()) if title_el else ""
+        if title:
+            ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")
+            slug = re.sub(r"[^A-Za-z0-9]+", "-", ascii_title).strip("-").lower()
+            if slug:
+                file_stem = slug
+
+    page_html = os.path.join(dir, file_stem + ".html")
 
     with open(page_html, "w", encoding=resp.encoding or "utf-8") as f:
         f.write(soup.prettify() )
@@ -289,17 +300,81 @@ def parse_trips(soup, id):
     return trips
 
 # ##############################################################################################
-# parse_trip
+# parse_footprints
 # ##############################################################################################
 
-def parse_trip(soup, photos_dir):
+def parse_footprints(soup):
 
     footprints = []
     for fp in soup.select("ul.FootprintList li.footprint"):
         fp_id = fp.get("data-id", "")
 
-        # Title: h2.headline > a
-        title_el = fp.select_one(".title h2.headline a")
+        link_el = fp.select_one(".title h2.headline a[href]")
+        href = link_el.get("href", "") if link_el else ""
+        fp_url = urljoin(BASE_URL, href) if href else ""
+
+        footprints.append({
+            "id": fp_id,
+            "url": fp_url,
+        })
+    return footprints
+
+
+
+# ##############################################################################################
+# parse_trip
+# ##############################################################################################
+
+def parse_trip(session, soup, trip_dir, photos_dir):
+
+    # Download GPX from trip internal ID found in div.tripBox[data-trip-id]
+    trip_box = soup.select_one("div.tripBox[data-trip-id]")
+    if trip_box:
+        trip_internal_id = trip_box.get("data-trip-id", "")
+        if trip_internal_id:
+            gpx_url = urljoin(
+                BASE_URL,
+                f"/account/trips/{trip_internal_id}/travel-route.gpx",
+            )
+            gpx_path = os.path.join(trip_dir, os.path.basename(trip_dir) + ".gpx")
+            print(f"Downloading GPX [{gpx_url}] ...")
+            try:
+                resp = session.get(gpx_url, headers=HEADERS, timeout=30)
+                resp.raise_for_status()
+                with open(gpx_path, "wb") as f:
+                    f.write(resp.content)
+            except Exception as e:
+                print(f"  GPX download failed: {e}")
+
+    footprints = []
+    for footprint_ref in parse_footprints(soup):
+        fp_id = footprint_ref.get("id", "")
+        fp_url = footprint_ref.get("url", "")
+
+        if not fp_url:
+            continue
+
+        # Save each footprint page in the current trip folder.
+        fp_soup = load_page(session, fp_url, trip_dir)
+        fp = fp_soup.select_one(f"li.footprint[data-id='{fp_id}']")
+        if not fp:
+            fp = fp_soup.select_one("ul.FootprintList li.footprint")
+        if not fp:
+            continue
+
+        # Coordinates from MapSingleFootprintController.initMap(lat, lon)
+        lat, lon = "", ""
+        for script in fp_soup.find_all("script"):
+            m = re.search(
+                r"MapSingleFootprintController\.initMap\(([\d.+-]+),([\d.+-]+)\)",
+                script.get_text(),
+            )
+            if m:
+                lat, lon = m.group(1), m.group(2)
+                break
+
+        # Title: h1.headline > a (fallback to h2 for older pages)
+        title_el = fp.select_one(".title h1.headline a") or fp.select_one(".title h2.headline a")
         title = clean_text(title_el.get_text()) if title_el else ""
 
         # Date: ISO value in content attr; weather follows ⋅ in the same span text
@@ -337,6 +412,8 @@ def parse_trip(soup, photos_dir):
             "title": title,
             "date": date,
             "weather": weather,
+            "lat": lat,
+            "lon": lon,
             "text": text,
             "text-private": text_private,
             "photos": photos,
@@ -430,10 +507,13 @@ def scrapper( args ):
     for idx, trip in enumerate(trips):
         print(f"  Trip #{idx+1}: {trip['title']}")
         try:
-            soup = load_page( session, trip["url"], output_dir )
+            trip_dir = os.path.join(output_dir, trip['slug'])
+            os.makedirs(trip_dir, exist_ok=True)
 
-            photos_dir = os.path.join( output_dir, trip['slug'])
-            footprints = parse_trip(soup, photos_dir)
+            soup = load_page(session, trip["url"], trip_dir)
+
+            photos_dir = trip_dir
+            footprints = parse_trip(session, soup, trip_dir, photos_dir)
             trip["footprints"] = footprints
 
         except Exception as e:
