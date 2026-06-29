@@ -83,6 +83,74 @@ def load_page( session, page_url, dir ):
 def clean_text(t):
     return re.sub(r"\s+", " ", (t or "")).strip()
 
+
+def extract_expandable_text(node):
+    if not node:
+        return ""
+
+    parsed = BeautifulSoup(str(node), "html.parser")
+    root = parsed.find()
+    if not root:
+        return ""
+
+    def strip_scheme(url):
+        if not url:
+            return ""
+        cleaned = url.strip()
+        cleaned = re.sub(r"^//", "", cleaned)
+        return re.sub(r"^https?://", "", cleaned, flags=re.IGNORECASE)
+
+    def to_https_url(url):
+        body = strip_scheme(url)
+        if not body:
+            return ""
+        return "https://" + body
+
+    # Merge split links split by a dots/rest pattern using href values.
+    # Example: https://A + https://B => https://AB and visible text "https://AB".
+    for dots in root.select(".dots"):
+        prev_a = dots.find_previous("a")
+        next_a = dots.find_next("a")
+        if not prev_a or not next_a:
+            continue
+        prev_href = prev_a.get("href", "")
+        next_href = next_a.get("href", "")
+        prev_body = strip_scheme(prev_href)
+        next_body = strip_scheme(next_href)
+        if not (prev_body and next_body):
+            continue
+        merged_body = prev_body + next_body
+        merged_url = "https://" + merged_body
+        prev_a["href"] = merged_url
+        prev_a.string = merged_url
+        next_a.decompose()
+
+    # Force link text to full https URL so output is not based on truncated UI labels.
+    for a in root.select("a[href]"):
+        href = a.get("href", "")
+        if re.match(r"^(https?://|//)", href.strip(), flags=re.IGNORECASE):
+            normalized = to_https_url(href)
+            if normalized:
+                a.string = normalized
+
+    # Remove UI-only elements while keeping hidden continuation text (.rest.hide).
+    for tag in root.select(".readMore, .dots, i.icon-font"):
+        tag.decompose()
+
+    # Keep explicit line break semantics from footprint markup.
+    for br in root.find_all("br"):
+        br.replace_with("\n")
+    for dbl in root.select(".double-break"):
+        dbl.replace_with("\n\n")
+
+    # separator="" ensures href fragments split only by .dots are re-joined.
+    text = root.get_text(separator="", strip=False)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
 # ##############################################################################################
 # normalize_phot_url
 # ##############################################################################################
@@ -163,57 +231,58 @@ def parse_profile(soup):
 def parse_trips(soup, id):
 
     trips = []
-    for box in soup.select(".tripList .box"):
-        link_el = box.select_one("a.trip-preview")
-        href = link_el["href"] if link_el and link_el.has_attr("href") else ""
+    for box in soup.select(".tripList .tripPreviewBox"):
+        link_el = box.select_one("a[href*='/trip/']") 
+        if not link_el:
+            continue
+        href = link_el.get("href", "")
         trip_url = urljoin(BASE_URL, href)
 
         # skip if not the id
-        parts = urlparse(trip_url)
-        dirname, filename = os.path.split(parts.path)
-        if id != dirname.lstrip("/").split("/", 1)[0]:
+        path_parts = urlparse(trip_url).path.strip("/").split("/")
+        # path_parts = ['<id>', 'trip', '<slug>']
+        if not path_parts or path_parts[0] != id:
             continue
+        slug = path_parts[-1]
 
-        title_el = box.select_one(".content .title h2")
+        title_el = link_el.select_one(".content .title h2")
         title = clean_text(title_el.get_text()) if title_el else ""
 
-        period_el = box.select_one(".content .title .subline")
-        period = clean_text(period_el.get_text()) if period_el else ""
+        # Stats: [0]=period(year+month text), [1]=days, [2]=km (optional), last=privacy icon
+        stats = link_el.select(".content .stats li")
+        period = clean_text(stats[0].get_text()) if stats else ""
+        days_b = stats[1].find("b") if len(stats) > 1 else None
+        days = days_b.get_text(strip=True) if days_b else ""
+        km = ""
+        if len(stats) > 2:
+            km_text = clean_text(stats[2].get_text())
+            if "kilometer" in km_text.lower():
+                km_b = stats[2].find("b")
+                km = km_b.get_text(strip=True) if km_b else ""
 
-        stats = box.select(".content .stats li")
-        countries = stats[0].b.get_text(strip=True) if len(stats) > 0 and stats[0].b else ""
-        footprints_count = stats[1].b.get_text(strip=True) if len(stats) > 1 and stats[1].b else ""
-        days = stats[2].b.get_text(strip=True) if len(stats) > 2 and stats[2].b else ""
-
-        parts = urlparse(href)
-        dirname, filename = os.path.split(parts.path)
-        slug = filename
+        is_current = box.select_one(".badge.current") is not None
 
         # Trip-specific companions
         companions = []
-        user_icon_bar = box.select_one(".userIconBar")
-        if user_icon_bar:
-            for span in user_icon_bar.select("span.item"):
-                uid = span.get("data-id", "")
-                img = span.find("img")
-                avatar = img.get("src", "") if img else ""
-                name_alt = img.get("alt", "") if img else ""
-                if avatar.startswith("//"):
-                    avatar = "https:" + avatar
-                elif avatar.startswith("/"):
-                    avatar = urljoin(BASE_URL, avatar)
-
-                # todo: download avatar
-
-                companions.append({"id": uid, "name": clean_text(name_alt), "avatar": avatar})
+        for span in box.select(".userIconBar span.item"):
+            uid = span.get("data-id", "")
+            img = span.find("img")
+            if not img:
+                continue
+            avatar = img.get("src", "")
+            if avatar.startswith("//"):
+                avatar = "https:" + avatar
+            elif avatar.startswith("/"):
+                avatar = urljoin(BASE_URL, avatar)
+            companions.append({"id": uid, "name": clean_text(img.get("alt", "")), "avatar": avatar})
 
         trips.append({
             "slug": slug,
             "title": title,
             "period": period,
-            "countries": countries,
-            "footprints_count": footprints_count,
             "days": days,
+            "km": km,
+            "is_current": str(is_current),
             "url": trip_url,
             "companions": companions,
         })
@@ -226,42 +295,52 @@ def parse_trips(soup, id):
 def parse_trip(soup, photos_dir):
 
     footprints = []
-    for fp_idx, fp in enumerate(soup.select(".footprint, li.footprint, .Footprint, .footprint-item")):
-        title_el = fp.select_one("h2, h3, .title, .footprint-title")
-        date_el = fp.select_one("time, .date")
-        text_el = fp.select_one(".text, .body, .description, .footprint-text, p")
-        # todo: merge with .text-private
-        # todo: date is desc
-        # todo: weather is .date after in France
-        # todo: title is h2
+    for fp in soup.select("ul.FootprintList li.footprint"):
+        fp_id = fp.get("data-id", "")
 
+        # Title: h2.headline > a
+        title_el = fp.select_one(".title h2.headline a")
         title = clean_text(title_el.get_text()) if title_el else ""
-        date = clean_text(date_el.get_text()) if date_el else ""
-        text = clean_text(text_el.get_text()) if text_el else ""
 
-        # need to better address the date and get weather and the br in text
+        # Date: ISO value in content attr; weather follows ⋅ in the same span text
+        date = ""
+        weather = ""
+        date_span = fp.select_one(".title .date .desc")
+        if date_span:
+            date = date_span.get("content", "")  # ISO date e.g. "2025-06-02"
+            desc_text = clean_text(date_span.get_text())
+            if "\u22c5" in desc_text:  # ⋅ dot separator
+                weather = desc_text.split("\u22c5", 1)[1].strip()
 
+        # Text body
+        text_el = fp.select_one(".content-container .text:not(.text-private)")
+        text = extract_expandable_text(text_el)
+
+        text_private_el = fp.select_one(".content-container .text-private")
+        text_private = extract_expandable_text(text_private_el)
+
+        # Photos: a.image.photo[data-url] already carries _l URLs — no normalization needed
         photos = []
-        for img in fp.select("img"):
-            src = img.get("src") or img.get("data-src", "")
-            if not src or "avatar" in src.lower() or src.endswith(".svg"):
+        for anchor in fp.select("a.image.photo[data-url]"):
+            img_url = anchor.get("data-url", "")
+            if not img_url:
                 continue
+            if img_url.startswith("//"):
+                img_url = "https:" + img_url
             try:
-                local_path = download_image(
-                    src,
-                    photos_dir,
-                    prefix=f"fp{fp_idx}_",
-                )
+                local_path = download_image(img_url, photos_dir, prefix=f"{fp_id}_")
                 photos.append(local_path)
             except Exception as e:
-                print(f"Photo download failed: {src} -> {e}")
+                print(f"Photo download failed: {img_url} -> {e}")
 
         footprints.append({
-            "title": title, 
-            "date": date, 
-            "weather": "",
-            "text": text, 
-            "photos": photos})
+            "title": title,
+            "date": date,
+            "weather": weather,
+            "text": text,
+            "text-private": text_private,
+            "photos": photos,
+        })
     return footprints
 
 # ##############################################################################################
@@ -301,7 +380,7 @@ def build_xml(user_data, trips):
             for key, value in fp.items():
                 if key not in ["photos"]:
                     print( f"footprint[{key}] : {value}")
-                    ET.SubElement(fps_el, key).text = value
+                    ET.SubElement(fp_el, key).text = value
 
             photos_el = ET.SubElement(fp_el, "photos")
             for p in fp["photos"]:
@@ -340,6 +419,11 @@ def scrapper( args ):
 
     user_data = parse_profile(soup)
     trips = parse_trips(soup, args.id)
+
+    if args.trip:
+        trips = [trip for trip in trips if trip["slug"] == args.trip]
+        if not trips:
+            raise RuntimeError(f'Trip not found: {args.trip}')
 
     # Process each trip
     print(f"Fetching {len(trips)} trips ...")
@@ -383,6 +467,7 @@ if __name__ == "__main__":
     parser.add_argument( "-u", "--username", default=None, help="Username" )
     parser.add_argument( "-p", "--password", default=None, help="Password" )
     parser.add_argument( "-o", "--output", default="output", help="Output folder" )
+    parser.add_argument( "-t", "--trip", default=None, help="Trip slug to parse only" )
 
     args = parser.parse_args()
 
