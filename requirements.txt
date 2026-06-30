@@ -1,3 +1,7 @@
 bs4
 requests
 argparse
+playwright
+imageio
+imageio-ffmpeg
+pillow

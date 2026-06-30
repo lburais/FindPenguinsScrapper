@@ -5,3 +5,4 @@ pages/
 venv/
 .gitignore
 .DS_Store
+.tile-cache/
