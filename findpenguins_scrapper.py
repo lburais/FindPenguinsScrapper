@@ -629,7 +629,7 @@ def parse_trips(soup, tripid):
                 avatar = "https:" + avatar
             elif avatar.startswith("/"):
                 avatar = urljoin(BASE_URL, avatar)
-            companions.append({"tripid": uid, "name": clean_text(img.get("alt", "")), "avatar": avatar})
+            companions.append({"uid": uid, "name": clean_text(img.get("alt", "")), "avatar": avatar})
 
         trips.append({
             "slug": slug,
