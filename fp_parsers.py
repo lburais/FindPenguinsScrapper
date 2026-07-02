@@ -61,13 +61,15 @@ def click_footprint_menu(page):
             weather_match = re.search(r"^\s*(\S+)", raw_temp)
             popup_data["weather"] = weather_match.group(1) if weather_match else ""
             temp_match = re.search(r"(-?\d+(?:[.,]\d+)?)", raw_temp)
-            popup_data["temperature"] = temp_match.group(1).replace(",", ".") if temp_match else ""
+            popup_data["temperature"] = temp_match.group(1).replace(",", "") if temp_match else ""
+            # popup_data["temperature"] = temp_match.group(1).replace(".", "") if temp_match else ""
 
         alt_icon = modal_soup.select_one("li .icon-font.altitude")
         if alt_icon and alt_icon.parent:
             raw_alt = clean_text(alt_icon.parent.get_text(" ", strip=True))
             alt_match = re.search(r"(-?\d+(?:[.,]\d+)?)", raw_alt)
-            popup_data["altitude"] = alt_match.group(1).replace(",", ".") if alt_match else ""
+            popup_data["altitude"] = alt_match.group(1).replace(",", "") if alt_match else ""
+            # popup_data["altitude"] = alt_match.group(1).replace(".", "") if alt_match else ""
 
         def dms_to_decimal(coord_text):
             """! @brief Convert DMS coordinates text into decimal latitude/longitude.
@@ -262,6 +264,7 @@ def parse_trips(soup, tripid):
             if "kilometer" in km_text.lower():
                 km_b = stats[2].find("b")
                 km = km_b.get_text(strip=True) if km_b else ""
+                # km = km.replace(".", ",")
 
         is_current = box.select_one(".badge.current") is not None
 
