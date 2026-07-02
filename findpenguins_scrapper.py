@@ -21,6 +21,33 @@ LOGIN_PAGE = "https://findpenguins.com/login"
 LOGIN_POST = "https://findpenguins.com/login/exec"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; FP-Scraper/1.0)"}
+GPX_NS = "http://www.topografix.com/GPX/1/1"
+XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+
+
+def gpx_tag(name):
+    """Return a GPX namespaced tag name."""
+    return f"{{{GPX_NS}}}{name}"
+
+
+def add_text_element(parent, name, value, namespace=GPX_NS):
+    """Append a text element when a value is available."""
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value:
+        return None
+
+    tag = gpx_tag(name) if namespace else name
+    child = ET.SubElement(parent, tag)
+    child.text = value
+    return child
+
+
+def format_tree(tree):
+    """Apply consistent 2-space indentation to an XML tree."""
+    ET.indent(tree, space="  ", level=0)
+    return tree
 
 
 def requests_cookies_to_playwright(session):
@@ -337,6 +364,9 @@ def clean_text(t):
     """Normalize whitespace in a text value."""
     return re.sub(r"\s+", " ", (t or "")).strip()
 
+# ##############################################################################################
+# extract_park4night
+# ##############################################################################################
 
 def extract_park4night(text):
     """Extract first park4night URL from text and return cleaned text + URL."""
@@ -361,6 +391,9 @@ def extract_park4night(text):
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned, park4night_url
 
+# ##############################################################################################
+# extract_private_links
+# ##############################################################################################
 
 def extract_private_links(text):
     """Extract park4night and wikipedia URLs, returning cleaned text and links."""
@@ -393,6 +426,10 @@ def extract_private_links(text):
     cleaned = re.sub(r" *\n *", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned, park4night_url, wikipedia_urls
+
+# ##############################################################################################
+# extract_expandable_text
+# ##############################################################################################
 
 
 def extract_expandable_text(node):
@@ -466,7 +503,7 @@ def extract_expandable_text(node):
     return text.strip()
 
 # ##############################################################################################
-# normalize_phot_url
+# normalize_photo_url
 # ##############################################################################################
 
 def normalize_photo_url(img_url: str) -> str:
@@ -749,74 +786,184 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
     return footprints
 
 # ##############################################################################################
-# build_xml
+# footprint_to_waypoint
 # ##############################################################################################
 
-def build_xml(user_data, trips):
-    """Build XML tree from parsed profile, trip, and footprint data."""
+def footprint_to_waypoint(footprint):
+    """Map one footprint dictionary to a GPX waypoint element."""
 
-    print("  - Building XML...")
+    lat = str(footprint.get("lat", "")).strip()
+    lon = str(footprint.get("lon", "")).strip()
+    if not lat or not lon:
+        return None
+
+    waypoint = ET.Element(gpx_tag("wpt"), lat=lat, lon=lon)
+    add_text_element(waypoint, "name", footprint.get("title", ""))
+    add_text_element(waypoint, "desc", footprint.get("text", ""))
+    add_text_element(waypoint, "ele", footprint.get("altitude", ""))
+
+    extensions_data = {
+        "date": footprint.get("date", ""),
+        "weather": footprint.get("weather", ""),
+        "temperature": footprint.get("temperature", ""),
+        "overnights": footprint.get("overnights", ""),
+        "flag": footprint.get("flag", ""),
+        "country": footprint.get("country", ""),
+        "city": footprint.get("city", ""),
+        "text-private": footprint.get("text-private", ""),
+        "park4night": footprint.get("park4night", ""),
+    }
+
+    if any(value for value in extensions_data.values()) or footprint.get("wikipedia") or footprint.get("photos"):
+        extensions = ET.SubElement(waypoint, gpx_tag("extensions"))
+
+        for key, value in extensions_data.items():
+            add_text_element(extensions, key, value, namespace=None)
+
+        if footprint.get("wikipedia"):
+            for wiki in footprint.get("wikipedia", []):
+                add_text_element(extensions, "wikipedia", wiki, namespace=None)
+
+        if footprint.get("photos"):
+            for photo in footprint.get("photos", []):
+                add_text_element(extensions, "photo", photo, namespace=None)
+
+    return waypoint
+
+# ##############################################################################################
+# build_trip_gpx
+# ##############################################################################################
+
+
+def build_trip_gpx(gpx_path, user_data, trip, footprints):
+    """Update a trip GPX file with metadata extensions and footprint waypoints."""
+
+    print(f"  - Building GPX [{gpx_path}]...")
+
+    ET.register_namespace("", GPX_NS)
+    ET.register_namespace("xsi", XSI_NS)
+
+    if os.path.exists(gpx_path):
+        tree = ET.parse(gpx_path)
+        root = tree.getroot()
+    else:
+        root = ET.Element(
+            gpx_tag("gpx"),
+            attrib={
+                "version": "1.1",
+                "creator": "FindPenguins",
+                f"{{{XSI_NS}}}schemaLocation": f"{GPX_NS} {GPX_NS}/gpx.xsd",
+            },
+        )
+        tree = ET.ElementTree(root)
+
+    metadata = root.find(gpx_tag("metadata"))
+    if metadata is None:
+        metadata = ET.Element(gpx_tag("metadata"))
+        root.insert(0, metadata)
+    else:
+        for child in list(metadata.findall(gpx_tag("extensions"))):
+            metadata.remove(child)
+
+    for waypoint in list(root.findall(gpx_tag("wpt"))):
+        root.remove(waypoint)
+
+    if not os.path.exists(gpx_path):
+        add_text_element(metadata, "name", trip.get("title", ""))
+        add_text_element(metadata, "desc", trip.get("period", ""))
+
+    author = metadata.find(gpx_tag("author"))
+    if author is None:
+        author = ET.SubElement(metadata, gpx_tag("author"))
+    author_name = author.find(gpx_tag("name"))
+    if author_name is None:
+        add_text_element(author, "name", user_data.get("name", ""))
+    else:
+        author_name.text = user_data.get("name", "")
+    if user_data.get("website", ""):
+        link = author.find(gpx_tag("link"))
+        if link is None:
+            ET.SubElement(author, gpx_tag("link"), href=user_data["website"])
+        else:
+            link.set("href", user_data["website"])
+
+    trip_meta = metadata.find(gpx_tag("extensions"))
+    if trip_meta is None:
+        trip_meta = ET.SubElement(metadata, gpx_tag("extensions"))
+
+    for key, value in trip.items():
+        if key in ["companions", "footprints", "gpx"]:
+            continue
+        print(f"    - trip[{key}] : {value}")
+        add_text_element(trip_meta, key, value, namespace=None)
+
+    for companion in trip.get("companions", []):
+        companion_ext = ET.SubElement(trip_meta, "companion")
+        for key, value in companion.items():
+            print(f"    - companion[{key}] : {value}")
+            add_text_element(companion_ext, key, value, namespace=None)
+
+    # Waypoints must precede track data in the serialized GPX.
+    waypoints = []
+    for footprint in footprints:
+        print("")
+        waypoint = footprint_to_waypoint(footprint)
+        if waypoint is None:
+            continue
+
+        print(f"    - waypoint[{footprint.get('title', '')}] : {footprint.get('lat', '')}, {footprint.get('lon', '')}")
+        waypoints.append(waypoint)
+
+    track_elements = list(root.findall(gpx_tag("trk")))
+    for track_element in track_elements:
+        root.remove(track_element)
+
+    for waypoint in waypoints:
+        root.append(waypoint)
+
+    for track_element in track_elements:
+        root.append(track_element)
+
+    format_tree(tree)
+    tree.write(gpx_path, encoding="utf-8", xml_declaration=True)
+
+# ##############################################################################################
+# build_user_xml
+# ##############################################################################################
+
+
+def build_user_xml(user_data, trips):
+    """Build a user-level XML index that references trip GPX files."""
+
+    print("  - Building user XML...")
 
     root = ET.Element("profile")
 
-    # User
     user_el = ET.SubElement(root, "user")
     for key, value in user_data.items():
-        print( f"    - user[{key}] : {value}")
-        ET.SubElement(user_el, key).text = value
+        print(f"    - user[{key}] : {value}")
+        add_text_element(user_el, key, value, namespace=None)
 
-    # Trips
     trips_el = ET.SubElement(root, "trips")
-    for t_idx, trip in enumerate(trips):
+    for trip in trips:
         trip_el = ET.SubElement(trips_el, "trip")
         for key, value in trip.items():
-            if key not in ['companions', 'footprints']:
-                print( f"    - trip[{key}] : {value}")
-                ET.SubElement(trip_el, key).text = value
+            if key in ["companions", "footprints", "gpx"]:
+                continue
+            print(f"    - trip[{key}] : {value}")
+            add_text_element(trip_el, key, value, namespace=None)
 
-        # Trip companions
-        tcomps_el = ET.SubElement(trip_el, "companions")
-        for c in trip.get("companions", []):
-            ce = ET.SubElement(tcomps_el, "companion")
-            for key, value in c.items():
-                print( f"    - companion[{key}] : {value}")
-                ET.SubElement(ce, key).text = value
+        gpx_ref = ET.SubElement(trip_el, "gpx")
+        gpx_ref.text = trip.get("gpx", "")
 
-        # Footprints
-        fps_el = ET.SubElement(trip_el, "footprints")
-        for fp in trip.get("footprints", []):
-            fp_el = ET.SubElement(fps_el, "footprint")
-            print( "")
-            for key, value in fp.items():
-                if key not in ["photos"]:
-                    if key == "wikipedia":
-                        for wiki in value:
-                            print( f"    - footprint[wikipedia] : {wiki}")
-                            ET.SubElement(fp_el, "wikipedia").text = wiki
-                        continue
-                    print( f"    - footprint[{key}] : {value}")
-                    ET.SubElement(fp_el, key).text = value
+        for companion in trip.get("companions", []):
+            companion_el = ET.SubElement(trip_el, "companion")
+            for key, value in companion.items():
+                print(f"    - companion[{key}] : {value}")
+                add_text_element(companion_el, key, value, namespace=None)
 
-            photos_el = ET.SubElement(fp_el, "photos")
-            for p in fp["photos"]:
-                print( f"    - footprint[photo] : {p}")
-                ET.SubElement(photos_el, "photo").text = p
-
-    # Pretty print
-    def indent(elem, level=0):
-        """Pretty-format XML by recursively adding indentation whitespace."""
-        i = "\n" + level * "  "
-        if len(elem):
-            if not elem.text or not elem.text.strip():
-                elem.text = i + "  "
-            for child in elem:
-                indent(child, level + 1)
-            if not child.tail or not child.tail.strip():
-                child.tail = i
-        elif level and (not elem.tail or not elem.tail.strip()):
-            elem.tail = i
-    indent(root)
-    return ET.ElementTree(root)
+    tree = ET.ElementTree(root)
+    return format_tree(tree)
 
 # ##############################################################################################
 # scrapper
@@ -824,7 +971,7 @@ def build_xml(user_data, trips):
 
 
 def scrapper(args):
-    """Run end-to-end scraping workflow and write output XML."""
+    """Run end-to-end scraping workflow and write user XML plus trip GPX files."""
 
     session = login(args.username, args.password)
     playwright, browser, page = create_browser_page(session)
@@ -859,17 +1006,26 @@ def scrapper(args):
                 photos_dir = trip_dir
                 footprints = parse_trip(page, session, soup, trip_dir, photos_dir, save_html=args.save_html)
                 trip["footprints"] = footprints
+                trip_gpx = os.path.join(output_dir, trip["slug"] + ".gpx")
+                trip["gpx"] = os.path.relpath(trip_gpx, output_dir)
+
+                build_trip_gpx(trip_gpx, user_data, trip, footprints)
+
+                old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
+                if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
+                    os.remove(old_trip_gpx)
 
             except Exception as e:
                 print(f"  ERROR: {e}")
                 trip["footprints"] = []
+                trip["gpx"] = os.path.relpath(os.path.join(output_dir, trip["slug"] + ".gpx"), output_dir)
 
-        # Build and save XML
-        xml_tree = build_xml(user_data, trips)
-        output_xml = os.path.join( output_dir, args.id + ".xml")
-        xml_tree.write(output_xml, encoding="utf-8", xml_declaration=True)
+            # Build and save user XML
+            xml_tree = build_user_xml(user_data, trips)
+            output_xml = os.path.join(output_dir, args.id + ".xml")
+            xml_tree.write(output_xml, encoding="utf-8", xml_declaration=True)
 
-        print(f"✅ Complete! XML: {output_xml}")
+            print(f"✅ Complete! XML: {output_xml}")
         print(f"✅ User: {user_data['name']}")
         print(f"✅ Trips: {len(trips)}")
 
