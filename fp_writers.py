@@ -8,9 +8,57 @@ metadata extensions, waypoint ordering, and indentation style.
 import os
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
+from math import radians, sin, cos, sqrt, atan2
 
 from fp_config import GPX_NS, XSI_NS
 from fp_utils import gpx_tag, add_text_element, format_tree
+from elevation import fetch_elevations
+
+
+def distance_meters(lat1, lon1, lat2, lon2):
+    """! @brief Compute great-circle distance between two coordinates in meters.
+    @param lat1 First latitude.
+    @param lon1 First longitude.
+    @param lat2 Second latitude.
+    @param lon2 Second longitude.
+    @return Distance in meters.
+    """
+    earth_radius = 6371000
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 2 * earth_radius * atan2(sqrt(a), sqrt(1 - a))
+
+
+def find_closest_trackpoint(waypoint, track_points):
+    """! @brief Find nearest track point for one waypoint.
+    @param waypoint GPX waypoint element.
+    @param track_points Track point dictionaries with lat/lon/time.
+    @return Closest track point dictionary or None when unavailable.
+    """
+    if not track_points:
+        return None
+
+    lat = waypoint.get("lat")
+    lon = waypoint.get("lon")
+    if lat is None or lon is None:
+        return None
+
+    try:
+        wlat = float(lat)
+        wlon = float(lon)
+    except ValueError:
+        return None
+
+    closest = None
+    min_distance = float("inf")
+    for point in track_points:
+        distance = distance_meters(wlat, wlon, point["lat"], point["lon"])
+        if distance < min_distance:
+            min_distance = distance
+            closest = point
+
+    return closest
 
 
 def footprint_to_waypoint(footprint):
@@ -141,6 +189,63 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints):
         waypoints.append(waypoint)
 
     track_elements = list(root.findall(gpx_tag("trk")))
+
+    track_points = []
+    track_point_elements = []
+    for track_element in track_elements:
+        for track_point in track_element.findall(f".//{gpx_tag('trkpt')}"):
+            lat = track_point.get("lat")
+            lon = track_point.get("lon")
+            if lat is None or lon is None:
+                continue
+            try:
+                point = {
+                    "lat": float(lat),
+                    "lon": float(lon),
+                    "time": (track_point.findtext(gpx_tag("time")) or "").strip(),
+                    "ele": None,
+                }
+            except ValueError:
+                continue
+            track_points.append(point)
+            track_point_elements.append(track_point)
+
+    if track_points:
+        try:
+            fetch_elevations(track_points)
+            for point, track_point in zip(track_points, track_point_elements):
+                elevation = point.get("ele")
+                if elevation is None:
+                    continue
+                ele_node = track_point.find(gpx_tag("ele"))
+                if ele_node is None:
+                    ele_node = ET.SubElement(track_point, gpx_tag("ele"))
+                ele_node.text = str(elevation)
+        except Exception as exc:
+            print(f"  - WARNING: unable to enrich trkpt elevations: {exc}")
+
+    for waypoint in waypoints:
+        closest = find_closest_trackpoint(waypoint, track_points)
+        if not closest:
+            continue
+
+        if closest.get("time"):
+            waypoint_time = waypoint.find(gpx_tag("time"))
+            if waypoint_time is None:
+                waypoint_time = ET.SubElement(waypoint, gpx_tag("time"))
+            waypoint_time.text = closest["time"]
+
+        waypoint_extensions = waypoint.find(gpx_tag("extensions"))
+        if waypoint_extensions is None:
+            waypoint_extensions = ET.SubElement(waypoint, gpx_tag("extensions"))
+
+        ET.SubElement(
+            waypoint_extensions,
+            "trkpt",
+            lat=f"{closest['lat']:.6f}",
+            lon=f"{closest['lon']:.6f}",
+        )
+
     for track_element in track_elements:
         root.remove(track_element)
 
