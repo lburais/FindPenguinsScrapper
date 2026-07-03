@@ -7,6 +7,7 @@ metadata extensions, waypoint ordering, and indentation style.
 
 import os
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 
 from fp_config import GPX_NS, XSI_NS
 from fp_utils import gpx_tag, add_text_element, format_tree
@@ -100,36 +101,34 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints):
         add_text_element(metadata, "name", trip.get("title", ""))
         add_text_element(metadata, "desc", trip.get("period", ""))
 
-    author = metadata.find(gpx_tag("author"))
-    if author is None:
-        author = ET.SubElement(metadata, gpx_tag("author"))
-    author_name = author.find(gpx_tag("name"))
-    if author_name is None:
-        add_text_element(author, "name", user_data.get("name", ""))
-    else:
-        author_name.text = user_data.get("name", "")
-    if user_data.get("website", ""):
-        link = author.find(gpx_tag("link"))
-        if link is None:
-            ET.SubElement(author, gpx_tag("link"), href=user_data["website"])
-        else:
-            link.set("href", user_data["website"])
+    trip_url = trip.get("url", "")
+    path_parts = urlparse(trip_url).path.strip("/").split("/") if trip_url else []
+    author_uid = path_parts[0] if path_parts else user_data.get("name", "")
+
+    # Replace legacy GPX author node with a flat uid metadata element.
+    for author in list(metadata.findall(gpx_tag("author"))):
+        metadata.remove(author)
+    for uid in list(metadata.findall("uid")):
+        metadata.remove(uid)
+    add_text_element(metadata, "uid", author_uid, namespace=None)
 
     trip_meta = metadata.find(gpx_tag("extensions"))
     if trip_meta is None:
         trip_meta = ET.SubElement(metadata, gpx_tag("extensions"))
 
     for key, value in trip.items():
-        if key in ["companions", "footprints", "gpx"]:
+        if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current"]:
             continue
         print(f"    - trip[{key}] : {value}")
         add_text_element(trip_meta, key, value, namespace=None)
 
     for companion in trip.get("companions", []):
+        companion_uid = str(companion.get("uid", "")).strip()
+        if not companion_uid:
+            continue
+        print(f"    - companion[uid] : {companion_uid}")
         companion_ext = ET.SubElement(trip_meta, "companion")
-        for key, value in companion.items():
-            print(f"    - companion[{key}] : {value}")
-            add_text_element(companion_ext, key, value, namespace=None)
+        companion_ext.text = companion_uid
 
     waypoints = []
     for footprint in footprints:
@@ -175,7 +174,7 @@ def build_user_xml(user_data, trips):
     for trip in trips:
         trip_el = ET.SubElement(trips_el, "trip")
         for key, value in trip.items():
-            if key in ["companions", "footprints", "gpx"]:
+            if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current"]:
                 continue
             print(f"    - trip[{key}] : {value}")
             add_text_element(trip_el, key, value, namespace=None)
@@ -185,9 +184,9 @@ def build_user_xml(user_data, trips):
 
         for companion in trip.get("companions", []):
             companion_el = ET.SubElement(trip_el, "companion")
-            for key, value in companion.items():
-                print(f"    - companion[{key}] : {value}")
-                add_text_element(companion_el, key, value, namespace=None)
+            companion_uid = str(companion.get("uid", "")).strip()
+            print(f"    - companion[uid] : {companion_uid}")
+            companion_el.text = companion_uid
 
     tree = ET.ElementTree(root)
     return format_tree(tree)
