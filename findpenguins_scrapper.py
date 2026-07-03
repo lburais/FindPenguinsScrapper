@@ -12,7 +12,7 @@ import shutil
 from urllib.parse import urljoin
 
 from fp_config import BASE_URL
-from fp_utils import login, create_browser_page, load_page
+from fp_utils import login, create_browser_page, load_page, download_image
 from fp_parsers import parse_profile, parse_trips, parse_trip
 from fp_writers import build_trip_gpx, build_user_xml
 
@@ -41,6 +41,16 @@ def scrapper(args):
         soup = load_page(page, urljoin(BASE_URL, args.id), output_dir, save_html=args.save_html)
 
         user_data = parse_profile(soup)
+        user_data["uid"] = args.id
+        user_data["email"] = args.username or ""
+        profile_picture_url = str(user_data.get("picture", "")).strip()
+        if profile_picture_url:
+            try:
+                local_picture = download_image(profile_picture_url, output_dir, prefix=f"{args.id}_profile")
+                user_data["picture"] = os.path.relpath(local_picture, output_dir)
+            except Exception as e:
+                print(f"  WARNING: profile picture download failed: {e}")
+
         trips = parse_trips(soup, args.id)
 
         if args.trip:

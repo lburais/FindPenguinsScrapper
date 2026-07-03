@@ -403,6 +403,7 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
 
         footprints.append(
             {
+                "url": fp_url,
                 "title": title,
                 "date": date,
                 "weather": weather,

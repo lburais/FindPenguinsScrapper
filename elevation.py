@@ -45,6 +45,8 @@ def fetch_elevations(points, source="opentopodata"):
         latitudes = ",".join(str(p["lat"]) for p in subset)
         longitudes = ",".join(str(p["lon"]) for p in subset)
 
+        print(f"  - Retrieving {len(subset)} points at {i}...")
+
         data = None
         for retry in range(max_retries):
             if provider == "opentopodata":

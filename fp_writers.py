@@ -76,6 +76,9 @@ def footprint_to_waypoint(footprint):
     add_text_element(waypoint, "name", footprint.get("title", ""))
     add_text_element(waypoint, "desc", footprint.get("text", ""))
     add_text_element(waypoint, "ele", footprint.get("altitude", ""))
+    waypoint_url = str(footprint.get("url", "")).strip()
+    if waypoint_url:
+        ET.SubElement(waypoint, gpx_tag("link"), href=waypoint_url)
 
     extensions_data = {
         "date": footprint.get("date", ""),
@@ -153,22 +156,38 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints):
     path_parts = urlparse(trip_url).path.strip("/").split("/") if trip_url else []
     author_uid = path_parts[0] if path_parts else user_data.get("name", "")
 
-    # Replace legacy GPX author node with a flat uid metadata element.
+    # Ensure metadata author section contains profile name/email/website.
     for author in list(metadata.findall(gpx_tag("author"))):
         metadata.remove(author)
+    author = ET.SubElement(metadata, gpx_tag("author"))
+    add_text_element(author, "name", user_data.get("name", ""))
+    add_text_element(author, "email", user_data.get("email", ""))
+    if user_data.get("website", ""):
+        ET.SubElement(author, gpx_tag("link"), href=user_data["website"])
+
+    # Keep uid only in metadata extensions and trip url as metadata link.
     for uid in list(metadata.findall("uid")):
         metadata.remove(uid)
-    add_text_element(metadata, "uid", author_uid, namespace=None)
+
+    metadata_link = metadata.find(gpx_tag("link"))
+    if trip_url:
+        if metadata_link is None:
+            metadata_link = ET.SubElement(metadata, gpx_tag("link"))
+        metadata_link.set("href", trip_url)
+    elif metadata_link is not None:
+        metadata.remove(metadata_link)
 
     trip_meta = metadata.find(gpx_tag("extensions"))
     if trip_meta is None:
         trip_meta = ET.SubElement(metadata, gpx_tag("extensions"))
 
     for key, value in trip.items():
-        if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current"]:
+        if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current", "url"]:
             continue
         print(f"    - trip[{key}] : {value}")
         add_text_element(trip_meta, key, value, namespace=None)
+
+    add_text_element(trip_meta, "uid", author_uid, namespace=None)
 
     for companion in trip.get("companions", []):
         companion_uid = str(companion.get("uid", "")).strip()
@@ -270,10 +289,19 @@ def build_user_xml(user_data, trips):
 
     root = ET.Element("profile")
 
-    user_el = ET.SubElement(root, "user")
+    # Flatten user fields directly under profile.
+    user_order = ["uid", "name", "bio", "location", "website", "picture"]
+    for key in user_order:
+        if key in user_data:
+            value = user_data.get(key, "")
+            print(f"    - user[{key}] : {value}")
+            add_text_element(root, key, value, namespace=None)
+
     for key, value in user_data.items():
+        if key in user_order:
+            continue
         print(f"    - user[{key}] : {value}")
-        add_text_element(user_el, key, value, namespace=None)
+        add_text_element(root, key, value, namespace=None)
 
     trips_el = ET.SubElement(root, "trips")
     for trip in trips:
