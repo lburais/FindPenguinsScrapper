@@ -260,7 +260,7 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints):
 
         ET.SubElement(
             waypoint_extensions,
-            "trkpt",
+            "point",
             lat=f"{closest['lat']:.6f}",
             lon=f"{closest['lon']:.6f}",
         )

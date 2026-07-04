@@ -101,7 +101,7 @@ Waypoint extensions (`<wpt><extensions>`) may include:
 - `<park4night>`
 - repeated `<wikipedia>`
 - repeated `<photo>` with local file path
-- `<trkpt lat="..." lon="..."/>` (nearest route point, custom extension)
+- `<point lat="..." lon="..."/>` (nearest route point, custom extension)
 
 ## 2.3 Track Elements (`trk`)
 

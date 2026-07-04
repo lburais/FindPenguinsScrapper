@@ -69,7 +69,7 @@ For each trip:
   - enriches `trkpt` elevations via `fetch_elevations(...)`
   - computes nearest `trkpt` for each `wpt` and copies:
     - `time` to waypoint
-    - matched point as custom `<trkpt lat="..." lon="..."/>` inside waypoint extensions
+    - matched point as custom `<point lat="..." lon="..."/>` inside waypoint extensions
 
 7. Build user XML index
 

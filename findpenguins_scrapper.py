@@ -15,6 +15,7 @@ from fp_config import BASE_URL
 from fp_utils import login, create_browser_page, load_page, download_image
 from fp_parsers import parse_profile, parse_trips, parse_trip
 from fp_writers import build_trip_gpx, build_user_xml
+from relive import create_relive_video
 
 # ##############################################################################################
 # scrapper
@@ -31,7 +32,7 @@ def scrapper(args):
     session = login(args.username, args.password)
     playwright, browser, page = create_browser_page(session)
 
-    output_dir = os.path.join("output", args.id)
+    output_dir = os.path.join(args.output, args.id)
     os.makedirs(output_dir, exist_ok=True)
 
     try:
@@ -81,6 +82,25 @@ def scrapper(args):
 
                 build_trip_gpx(trip_gpx, user_data, trip, footprints)
 
+                if args.relive:
+                    relive_output = os.path.join(output_dir, trip["slug"] + ".mp4")
+                    print(f"  - Building Relive video [{relive_output}] ...")
+                    try:
+                        create_relive_video(
+                            gpx=trip_gpx,
+                            photos=photos_dir,
+                            title=trip.get("title", ""),
+                            output=relive_output,
+                            width=args.relive_width,
+                            height=args.relive_height,
+                            fps=args.relive_fps,
+                            duration=args.relive_duration,
+                            zoom=args.relive_zoom,
+                            tile_cache=args.relive_tile_cache,
+                        )
+                    except Exception as e:
+                        print(f"  WARNING: relive generation failed for [{trip['slug']}]: {e}")
+
                 old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
                 if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
                     os.remove(old_trip_gpx)
@@ -122,6 +142,13 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", default="output", help="Output folder")
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
+    parser.add_argument("--relive", action="store_true", help="Generate Relive-style MP4 for each processed trip")
+    parser.add_argument("--relive-width", type=int, default=1280, help="Relive video width")
+    parser.add_argument("--relive-height", type=int, default=720, help="Relive video height")
+    parser.add_argument("--relive-fps", type=int, default=24, help="Relive video FPS")
+    parser.add_argument("--relive-duration", type=int, default=45, help="Relive video duration in seconds")
+    parser.add_argument("--relive-zoom", type=int, default=None, help="Relive map zoom level")
+    parser.add_argument("--relive-tile-cache", default=".tile-cache", help="Relive tile cache directory")
 
     arguments = parser.parse_args()
 

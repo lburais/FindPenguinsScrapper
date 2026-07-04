@@ -34,7 +34,7 @@ def fetch_elevations(points, source="opentopodata"):
     max_retries = 5
     provider = (source or "opentopodata").strip().lower()
 
-    if provider not in ("opentopodata", "copernicus"):
+    if provider not in ("opentopodata"):
         raise ValueError(f"Unsupported elevation source: {source}")
 
     for i in range(0, len(points), batch):
@@ -45,8 +45,6 @@ def fetch_elevations(points, source="opentopodata"):
         latitudes = ",".join(str(p["lat"]) for p in subset)
         longitudes = ",".join(str(p["lon"]) for p in subset)
 
-        print(f"  - Retrieving {len(subset)} points at {i}...")
-
         data = None
         for retry in range(max_retries):
             if provider == "opentopodata":
@@ -55,27 +53,19 @@ def fetch_elevations(points, source="opentopodata"):
                     params={"locations": locations},
                     timeout=30,
                 )
-            else:
-                r = requests.get(
-                    COPERNICUS_URL,
-                    params={"latitude": latitudes, "longitude": longitudes},
-                    timeout=30,
-                )
 
             if r.status_code == 429:
                 if retry == max_retries - 1:
                     r.raise_for_status()
                 wait_seconds = 2 ** retry
-                print(f"Rate limited by elevation API, retrying in {wait_seconds}s ...")
+                if (wait_seconds > 1):
+                    print(f"Rate limited by elevation API, retrying in {wait_seconds}s ...")
                 time.sleep(wait_seconds)
                 continue
 
             r.raise_for_status()
             if provider == "opentopodata":
                 data = r.json()["results"]
-            else:
-                elevations = r.json().get("elevation", [])
-                data = [{"elevation": ele} for ele in elevations]
             break
 
         if data is None:
