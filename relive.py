@@ -281,19 +281,14 @@ def fetch_tile(x: int, y: int, z: int, cache_dir: Path) -> Image.Image:
 
 def build_map(
     route_points: list[Point],
-#    view_points: list[Point],
     width: int,
     height: int,
     zoom: int,
     cache_dir: Path,
     margin: int,
 ) -> tuple[Image.Image, list[tuple[int, int]]]:
-    # bounds_points = view_points if view_points else route_points
-    # view_coords = [lonlat_to_world(p.lon, p.lat, zoom) for p in bounds_points]
     route_coords = [lonlat_to_world(p.lon, p.lat, zoom) for p in route_points]
 
-    # xs = [c[0] for c in view_coords]
-    # ys = [c[1] for c in view_coords]
     xs = [c[0] for c in route_coords]
     ys = [c[1] for c in route_coords]
     min_x, max_x = min(xs), max(xs)
@@ -392,7 +387,7 @@ def wrap_text_lines(text: str, max_chars: int) -> list[str]:
     return lines
 
 
-def draw_event_card(frame: Image.Image, event: WaypointEvent, frame_no: int, fps: int) -> None:
+def draw_event_card(frame: Image.Image, event: WaypointEvent, photo_index: int = 0) -> None:
     draw = ImageDraw.Draw(frame)
     title_font = default_font(24, bold=True)
     body_font = default_font(18)
@@ -420,8 +415,7 @@ def draw_event_card(frame: Image.Image, event: WaypointEvent, frame_no: int, fps
             y += 26
 
     if event.photos:
-        photo = event.photos[(frame_no // max(1, fps * 2)) % len(event.photos)]
-        draw_photo(frame, photo)
+        draw_photo(frame, event.photos[photo_index % len(event.photos)])
 
 
 def draw_photo(frame: Image.Image, photo: Photo) -> None:
@@ -454,41 +448,24 @@ def render_video(
     end_time = points[-1].when
     total_seconds = (end_time - start_time).total_seconds() if start_time and end_time else duration
 
-    active_event: WaypointEvent | None = None
-    active_until = -1
+    photo_delay_seconds = 2.0
+    triggered_keys: set[str] = set()
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with imageio.get_writer(output, fps=fps, codec="libx264", quality=8, macro_block_size=8) as writer:
-        for frame_no in range(frames):
-            progress = frame_no / max(1, frames - 1)
-            eased = 1 - (1 - progress) ** 2
-            idx = interpolate_index(points, eased)
+
+        def write_frame(idx: int, eased: float, event: WaypointEvent | None = None, photo_index: int = 0) -> None:
             frame = base.copy().convert("RGBA")
             draw = ImageDraw.Draw(frame)
-
             if len(route_pixels) > 1:
-                draw.line(route_pixels, fill=(25, 38, 52, 150), width=8, joint="curve")
                 draw.line(route_pixels[: idx + 1], fill=(255, 95, 54, 255), width=9, joint="curve")
                 draw.line(route_pixels[: idx + 1], fill=(255, 230, 90, 255), width=3, joint="curve")
-
             marker = route_pixels[idx]
             draw.ellipse((marker[0] - 13, marker[1] - 13, marker[0] + 13, marker[1] + 13), fill=(255, 255, 255, 255))
             draw.ellipse((marker[0] - 8, marker[1] - 8, marker[0] + 8, marker[1] + 8), fill=(255, 95, 54, 255))
-
-            point_key = coord_key(points[idx].lat, points[idx].lon)
-            matched_events = events_by_coord.get(point_key)
-            if matched_events:
-                active_event = matched_events[0]
-                active_until = frame_no + fps * 4
-
-            if active_event is not None and frame_no <= active_until:
-                draw_event_card(frame, active_event, frame_no, fps)
-            elif frame_no > active_until:
-                active_event = None
-
-            bottom_y = height - 104
-            draw.text((28, bottom_y), title, font=font_big, fill=(255, 255, 255, 255))
-
+            if event is not None:
+                draw_event_card(frame, event, photo_index)
+            draw.text((28, height - 104), title, font=font_big, fill=(255, 255, 255, 255))
             km = points[idx].distance_m / 1000
             elapsed = total_seconds * eased
             speed = (km / (elapsed / 3600)) if elapsed > 1 else 0.0
@@ -504,11 +481,28 @@ def render_video(
                 draw.text((stat_x, stat_y), value, font=font_mid, fill=(255, 255, 255, 255))
                 draw.text((stat_x, stat_y + 30), label, font=font_small, fill=(183, 199, 214, 255))
                 stat_x += 190
-
             progress_w = int((width - 56) * eased)
             draw.rounded_rectangle((28, height - 10, width - 28, height - 4), radius=3, fill=(80, 92, 107, 255))
             draw.rounded_rectangle((28, height - 10, 28 + progress_w, height - 4), radius=3, fill=(255, 95, 54, 255))
             writer.append_data(np.asarray(frame.convert("RGB"), dtype=np.uint8))
+
+        for frame_no in range(frames):
+            progress = frame_no / max(1, frames - 1)
+            eased = 1 - (1 - progress) ** 2
+            idx = interpolate_index(points, eased)
+
+            point_key = coord_key(points[idx].lat, points[idx].lon)
+            matched_events = events_by_coord.get(point_key)
+            if matched_events and point_key not in triggered_keys:
+                triggered_keys.add(point_key)
+                event = matched_events[0]
+                num_photos = len(event.photos) if event.photos else 1
+                photo_frames = int(fps * photo_delay_seconds)
+                for photo_idx in range(num_photos):
+                    for _ in range(photo_frames):
+                        write_frame(idx, eased, event, photo_idx)
+
+            write_frame(idx, eased)
 
 
 def slug_from_path(path: Path) -> str:
@@ -522,8 +516,8 @@ def create_relive_video(
     output: Path | str | None = None,
     photos: Path | str | None = None,
     title: str | None = None,
-    width: int = 1280,
-    height: int = 720,
+    width: int = 800,
+    height: int = 800,
     fps: int = 24,
     duration: int = 45,
     zoom: int | None = None,
