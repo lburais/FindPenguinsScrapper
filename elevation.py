@@ -7,22 +7,6 @@ COPERNICUS_URL = "https://api.open-meteo.com/v1/elevation"
 
 
 # ---------------------------------------------------------
-# Distance
-# ---------------------------------------------------------
-
-def haversine(lat1, lon1, lat2, lon2):
-
-    R = 6371000
-
-    dlat = radians(lat2-lat1)
-    dlon = radians(lon2-lon1)
-
-    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
-
-    return 2*R*atan2(sqrt(a), sqrt(1-a))
-
-
-# ---------------------------------------------------------
 # Elevation API
 # ---------------------------------------------------------
 
@@ -119,25 +103,3 @@ def gain_loss(points):
             loss -= d
 
     return gain, loss
-
-
-# ---------------------------------------------------------
-# Distance
-# ---------------------------------------------------------
-
-def total_distance(points):
-
-    d = 0
-
-    for p1, p2 in zip(points[:-1], points[1:]):
-
-        d += haversine(
-            p1["lat"],
-            p1["lon"],
-            p2["lat"],
-            p2["lon"]
-        )
-
-    return d
-
-

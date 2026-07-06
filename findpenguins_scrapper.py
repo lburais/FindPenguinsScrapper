@@ -80,7 +80,7 @@ def scrapper(args):
                 if os.path.exists(downloaded_trip_gpx):
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
 
-                build_trip_gpx(trip_gpx, user_data, trip, footprints)
+                build_trip_gpx(trip_gpx, user_data, trip, footprints, args.elevation)
 
                 if args.relive:
                     relive_output = os.path.join(output_dir, trip["slug"] + ".mp4")
@@ -141,6 +141,7 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--password", default=None, help="Password")
     parser.add_argument("-o", "--output", default="output", help="Output folder")
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
+    parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
     parser.add_argument("--relive", action="store_true", help="Generate Relive-style MP4 for each processed trip")
     parser.add_argument("--relive-width", type=int, default=1280, help="Relive video width")

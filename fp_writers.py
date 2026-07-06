@@ -109,7 +109,7 @@ def footprint_to_waypoint(footprint):
     return waypoint
 
 
-def build_trip_gpx(gpx_path, user_data, trip, footprints):
+def build_trip_gpx(gpx_path, user_data, trip, footprints, elevation):
     """! @brief Build or update one trip GPX with metadata and footprint waypoints.
     @param gpx_path Output GPX file path.
     @param user_data Dictionary of profile-level fields.
@@ -229,7 +229,7 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints):
             track_points.append(point)
             track_point_elements.append(track_point)
 
-    if track_points:
+    if track_points and elevation:
         try:
             fetch_elevations(track_points)
             for point, track_point in zip(track_points, track_point_elements):
