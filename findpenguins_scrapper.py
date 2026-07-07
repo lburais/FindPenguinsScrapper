@@ -15,7 +15,7 @@ from fp_config import BASE_URL
 from fp_utils import login, create_browser_page, load_page, download_image
 from fp_parsers import parse_profile, parse_trips, parse_trip
 from fp_writers import build_trip_gpx, build_user_xml
-from relive import create_relive_video
+from relive import relive
 
 # ##############################################################################################
 # scrapper
@@ -86,7 +86,7 @@ def scrapper(args):
                     relive_output = os.path.join(output_dir, trip["slug"] + ".mp4")
                     print(f"  - Building Relive video [{relive_output}] ...")
                     try:
-                        create_relive_video(
+                        relive(
                             gpx=trip_gpx,
                             photos=photos_dir,
                             title=trip.get("title", ""),
@@ -97,6 +97,7 @@ def scrapper(args):
                             duration=args.relive_duration,
                             zoom=args.relive_zoom,
                             tile_cache=args.relive_tile_cache,
+                            photo_delay=float(args.relive_photo)/1000.0,
                         )
                     except Exception as e:
                         print(f"  WARNING: relive generation failed for [{trip['slug']}]: {e}")
@@ -144,10 +145,11 @@ if __name__ == "__main__":
     parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
     parser.add_argument("--relive", action="store_true", help="Generate Relive-style MP4 for each processed trip")
-    parser.add_argument("--relive-width", type=int, default=1280, help="Relive video width")
-    parser.add_argument("--relive-height", type=int, default=720, help="Relive video height")
-    parser.add_argument("--relive-fps", type=int, default=24, help="Relive video FPS")
-    parser.add_argument("--relive-duration", type=int, default=45, help="Relive video duration in seconds")
+    parser.add_argument("--relive-photo", type=int, default=500, help="Relive photo duration in ms")
+    parser.add_argument("--relive-width", type=int, default=1366, help="Relive video width")
+    parser.add_argument("--relive-height", type=int, default=1024, help="Relive video height")
+    parser.add_argument("--relive-fps", type=int, default=10, help="Relive video FPS")
+    parser.add_argument("--relive-duration", type=int, default=60, help="Relive video duration in seconds")
     parser.add_argument("--relive-zoom", type=int, default=None, help="Relive map zoom level")
     parser.add_argument("--relive-tile-cache", default=".tile-cache", help="Relive tile cache directory")
 

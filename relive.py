@@ -1,14 +1,3 @@
-#!/usr/bin/env python3
-"""
-Create a Relive-like animated route video from a GPX file.
-
-Example:
-    python relive_like.py sortie.gpx --photos ./photos --output sortie.mp4
-
-Dependencies:
-    pip install pillow imageio imageio-ffmpeg requests
-"""
-
 from __future__ import annotations
 
 import datetime as dt
@@ -31,7 +20,6 @@ from PIL import ImageDraw as pil_image_draw
 from PIL import ImageFont as pil_image_font
 from PIL import ImageOps as pil_image_ops
 
-
 TILE_SIZE = 256
 USER_AGENT = "relive-like-python/1.0"
 
@@ -42,6 +30,10 @@ Image = pil_image
 ImageDraw = pil_image_draw
 ImageFont = pil_image_font
 ImageOps = pil_image_ops
+
+# ##############################################################################################
+# dataclass
+# ##############################################################################################
 
 @dataclass
 class Waypoint:
@@ -87,13 +79,34 @@ class Photo:
     Attributes:
         path: File path to the original image.
         image: Processed PIL Image object (RGB, resized).
-        when: Photo timestamp from EXIF or None.
-        lat: Latitude from EXIF or None.
-        lon: Longitude from EXIF or None.
+        caption: Photo caption text or None.
     """
     path: Path
     image: Image.Image
+    caption: str | None = None
 
+
+# ##############################################################################################
+# slug_from_path
+# ##############################################################################################
+
+def slug_from_path(path: Path) -> str:
+    """Create URL-safe slug from file path.
+    
+    Args:
+        path: File path.
+        
+    Returns:
+        Lowercase slug with non-alphanumeric chars replaced by hyphens.
+    """
+    name = path.stem.lower()
+    name = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
+    return name or "route"
+
+
+# ##############################################################################################
+# parse_time
+# ##############################################################################################
 
 def parse_time(value: str | None) -> dt.datetime | None:
     """Parse ISO format datetime string, handling Z timezone suffix.
@@ -115,18 +128,9 @@ def parse_time(value: str | None) -> dt.datetime | None:
         return None
 
 
-def coord_key(lat: float, lon: float) -> str:
-    """Create a string key from latitude and longitude coordinates.
-    
-    Args:
-        lat: Latitude coordinate.
-        lon: Longitude coordinate.
-        
-    Returns:
-        Formatted coordinate string with 7 decimal precision.
-    """
-    return f"{lat:.7f},{lon:.7f}"
-
+# ##############################################################################################
+# parse_point_node
+# ##############################################################################################
 
 def parse_point_node(node: ET.Element) -> Point:
     """Parse a GPX point/waypoint node into a Point object.
@@ -152,6 +156,10 @@ def parse_point_node(node: ET.Element) -> Point:
             when = parse_time(child.text)
     return Point(lat=lat, lon=lon, ele=ele, when=when)
 
+
+# ##############################################################################################
+# resolve_photo_path
+# ##############################################################################################
 
 def resolve_photo_path(raw_path: str, gpx_path: Path, photos_dir: Path | None) -> Path | None:
     """Resolve a photo path from multiple possible locations.
@@ -185,14 +193,18 @@ def resolve_photo_path(raw_path: str, gpx_path: Path, photos_dir: Path | None) -
     return None
 
 
-def load_event_photo(path: Path, max_side: int = 320) -> Photo | None:
+# ##############################################################################################
+# load_event_photo
+# ##############################################################################################
+
+def load_event_photo(path: Path, caption: str | None = None) -> Photo | None:
     """Load and prepare a photo for display in event card.
     
-    Loads image, applies EXIF rotation, extracts timestamp, and resizes to max_side.
+    Loads image, applies EXIF rotation.
     
     Args:
         path: Path to image file.
-        max_side: Maximum dimension for thumbnail (default 320px).
+        caption: Optional photo caption text.
         
     Returns:
         Photo object with processed image or None if loading fails.
@@ -200,89 +212,15 @@ def load_event_photo(path: Path, max_side: int = 320) -> Photo | None:
     try:
         image = Image.open(path)
         image = ImageOps.exif_transpose(image).convert("RGB")
-        image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
-        return Photo(path=path, image=image.copy())
+        return Photo(path=path, image=image.copy(), caption=caption)
     except Exception as exc:
         print(f"Skipping event photo {path}: {exc}", file=sys.stderr)
         return None
 
 
-def parse_gpx(path: Path, photos_dir: Path | None = None) -> tuple[list[Point], list[Waypoint]]:
-    """Parse GPX file and extract route points and waypoint events.
-    
-    Args:
-        path: Path to GPX file.
-        photos_dir: Optional directory to search for event photos.
-        
-    Returns:
-        Tuple of (route_points, events_by_coord_dict).
-    """
-    tree = ET.parse(path)
-    root = tree.getroot()
-
-    trk_nodes = [node for node in root.iter() if node.tag.endswith("trkpt")]
-    wpt_nodes = [node for node in root.iter() if node.tag.endswith("wpt")]
-
-    if trk_nodes:
-        source_nodes = trk_nodes
-    else:
-        source_nodes = wpt_nodes
-
-    points = [parse_point_node(node) for node in source_nodes]
-
-    if len(points) < 2:
-        raise ValueError("The GPX file must contain at least two trkpt or wpt points.")
-
-    total = 0.0
-    for idx in range(1, len(points)):
-        total += haversine(points[idx - 1], points[idx])
-        points[idx].distance_m = total
-
-    # View points are strictly GPX waypoints.
-    waypoints: list[Waypoint] = []
-
-    for wpt in wpt_nodes:
-        try:
-            wpt_lat = float(wpt.attrib["lat"])
-            wpt_lon = float(wpt.attrib["lon"])
-        except Exception:
-            continue
-
-        name = ""
-        description = ""
-        when = None
-        photo_paths: list[Path] = []
-
-        for child in wpt:
-            tag = child.tag.split("}", 1)[-1]
-            text = (child.text or "").strip()
-            if tag == "time":
-                when = parse_time(text)
-            elif tag == "name":
-                name = text
-            elif tag == "desc":
-                description = text
-            elif tag == "extensions":
-                for ext in child:
-                    ext_tag = ext.tag.split("}", 1)[-1]
-                    ext_text = (ext.text or "").strip()
-                    if ext_tag == "photo" and ext_text:
-                        resolved = resolve_photo_path(ext_text, path, photos_dir)
-                        if resolved is not None:
-                            photo_paths.append(resolved)
-
-        event_photos: list[Photo] = []
-        for photo_path in photo_paths:
-            loaded = load_event_photo(photo_path)
-            if loaded is not None:
-                event_photos.append(loaded)
-
-        waypoint = Waypoint(name=name, description=description, lat=wpt_lat, lon=wpt_lon, when=when, displayed=False, photos=event_photos)
-
-        waypoints.append(waypoint)
-
-    return points, waypoints
-
+# ##############################################################################################
+# haversine
+# ##############################################################################################
 
 def haversine(a: Point, b: Point) -> float:
     """Calculate great-circle distance between two points on Earth.
@@ -303,6 +241,10 @@ def haversine(a: Point, b: Point) -> float:
     return 2 * radius * math.asin(math.sqrt(h))
 
 
+# ##############################################################################################
+# lonlat_to_world
+# ##############################################################################################
+
 def lonlat_to_world(lon: float, lat: float, zoom: int) -> tuple[float, float]:
     """Convert geographic coordinates to Web Mercator tile coordinates.
     
@@ -321,6 +263,10 @@ def lonlat_to_world(lon: float, lat: float, zoom: int) -> tuple[float, float]:
     y = (0.5 - math.log((1 + sin_lat) / (1 - sin_lat)) / (4 * math.pi)) * scale
     return x, y
 
+
+# ##############################################################################################
+# choose_zoom
+# ##############################################################################################
 
 def choose_zoom(points: list[Point], width: int, height: int, margin: int) -> int:
     """Choose optimal zoom level to fit all points with margin.
@@ -344,6 +290,10 @@ def choose_zoom(points: list[Point], width: int, height: int, margin: int) -> in
             return zoom
     return 6
 
+
+# ##############################################################################################
+# fetch_tile
+# ##############################################################################################
 
 def fetch_tile(x: int, y: int, z: int, cache_dir: Path) -> Image.Image:
     """Fetch and cache a map tile from OpenStreetMap.
@@ -374,6 +324,280 @@ def fetch_tile(x: int, y: int, z: int, cache_dir: Path) -> Image.Image:
     return Image.open(target).convert("RGB")
 
 
+# ##############################################################################################
+# default_font
+# ##############################################################################################
+
+def default_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+    """Load a system font with fallback chain.
+    
+    Args:
+        size: Font size in points.
+        bold: Load bold variant if True.
+        
+    Returns:
+        PIL ImageFont object.
+    """
+    candidates = [
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/Library/Fonts/Arial Bold.ttf" if bold else "/Library/Fonts/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return ImageFont.truetype(candidate, size)
+    return ImageFont.load_default()
+
+
+# ##############################################################################################
+# format_duration
+# ##############################################################################################
+
+def format_duration(seconds: float) -> str:
+    """Format seconds into human-readable duration string.
+    
+    Args:
+        seconds: Duration in seconds.
+        
+    Returns:
+        Formatted string like '1h 05m' or '3m 42s'.
+    """
+    seconds = max(0, int(seconds))
+    hours, rem = divmod(seconds, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    return f"{minutes}m {secs:02d}s"
+
+
+# ##############################################################################################
+# wrap_text_line
+# ##############################################################################################
+
+def wrap_text_lines(text: str, max_chars: int) -> list[str]:
+    """Wrap text into lines with maximum character width.
+    
+    Args:
+        text: Text to wrap.
+        max_chars: Maximum characters per line.
+        
+    Returns:
+        List of text lines.
+    """
+    words = text.split()
+    if not words:
+        return []
+    lines: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+# ##############################################################################################
+# render_video
+# ##############################################################################################
+
+def render_video(
+    points: list[Point],
+    base: Image.Image,
+    route_pixels: list[tuple[int, int]],
+    waypoints: list[Waypoint],
+    output: Path,
+    title: str,
+    fps: int,
+    duration: int,
+    photo_delay_seconds: float = 2.0,
+    waypoint_pixels: list[tuple[int, int]] | None = None,
+) -> None:
+    """Render animated video with route and waypoint events.
+    
+    Generates MP4 video showing route animation with progress statistics
+    and waypoint event cards with photos. Events are triggered when nearest
+    waypoint is reached and all photos are displayed sequentially.
+    
+    Args:
+        points: Route points with distance data.
+        base: Base map image.
+        route_pixels: Pixel coordinates for route points.
+        waypoints: List of waypoint events.
+        output: Output MP4 file path.
+        title: Video title.
+        fps: Frames per second.
+        duration: Video duration in seconds.
+        photo_delay_seconds: Seconds to display each photo (default 2.0).
+        waypoint_pixels: Pixel coordinates for waypoints (default None).
+    """
+    if waypoint_pixels is None:
+        waypoint_pixels = []
+
+    width, height = base.size
+    # frames = fps * duration
+    font_big = default_font(38, bold=True)
+    font_mid = default_font(25, bold=True)
+    font_small = default_font(21)
+    start_time = points[0].when
+    end_time = points[-1].when
+    total_seconds = (end_time - start_time).total_seconds() if start_time and end_time else duration
+    total_photos = sum(max(1, len(wpt.photos)) for wpt in waypoints)
+    route_frames = fps * duration
+    frames = route_frames + int(fps * photo_delay_seconds) * total_photos
+    route_frame_no = 0
+    idx = 1
+    eased = 0.0
+    active_waypoint: Waypoint | None = None
+    active_photo_idx = 0
+    frames_left_for_photo = 0
+
+    print(f"Frames: {route_frames} - Total Frames: {frames} - Total Photos: {total_photos}")
+
+
+    def find_waypoint(point: Point, previous_point: Point) -> Waypoint | None:
+        """Find the waypoint to the given point."""
+        for waypoint in waypoints:
+            if point.when >= waypoint.when and previous_point.when < waypoint.when and not waypoint.displayed:
+                return waypoint
+        return None
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with imageio.get_writer(output, fps=fps, codec="libx264", quality=8, macro_block_size=8) as writer:
+
+        for frame_no in range(frames):
+            # Only advance route when not currently displaying a waypoint
+            if frames_left_for_photo <= 0:
+                progress = route_frame_no / max(1, route_frames - 1)
+                eased = 1 - (1 - progress) ** 2
+
+                # Find route point index at given progress (0.0-1.0)
+                target = points[-1].distance_m * eased
+                lo, hi = 0, len(points) - 1
+                while lo < hi:
+                    mid = (lo + hi) // 2
+                    if points[mid].distance_m < target:
+                        lo = mid + 1
+                    else:
+                        hi = mid
+                new_idx = max(1, lo)
+
+
+                waypoint = find_waypoint(points[new_idx], points[idx])
+                if waypoint is not None:
+                    active_waypoint = waypoint
+                    active_photo_idx = 0
+                    frames_left_for_photo = int(fps * photo_delay_seconds * max(1, len(waypoint.photos)))
+
+                idx = new_idx
+                route_frame_no = min(route_frame_no + 1, route_frames - 1)
+
+            frame = base.copy().convert("RGBA")
+            draw = ImageDraw.Draw(frame)
+            if len(route_pixels) > 1:
+                draw.line(route_pixels[: idx + 1], fill=(255, 95, 54, 255), width=3, joint="curve")
+                draw.line(route_pixels[: idx + 1], fill=(255, 230, 90, 255), width=1, joint="curve")
+            # Draw waypoint ellipses for reached waypoints
+            for wp_idx, waypoint in enumerate(waypoints):
+                if waypoint.displayed and wp_idx < len(waypoint_pixels):
+                    wp_marker = waypoint_pixels[wp_idx]
+                    draw.ellipse((wp_marker[0] - 10, wp_marker[1] - 10, wp_marker[0] + 10, wp_marker[1] + 10), fill=(255, 255, 255, 255))
+                    draw.ellipse((wp_marker[0] - 6, wp_marker[1] - 6, wp_marker[0] + 6, wp_marker[1] + 6), fill=(100, 200, 100, 255))
+
+            marker = route_pixels[idx]
+            draw.ellipse((marker[0] - 13, marker[1] - 13, marker[0] + 13, marker[1] + 13), fill=(255, 255, 255, 255))
+            draw.ellipse((marker[0] - 8, marker[1] - 8, marker[0] + 8, marker[1] + 8), fill=(255, 95, 54, 255))
+
+            if active_waypoint is not None and frames_left_for_photo > 0:
+
+                # Draw active waypoint with current photo
+                frames_per_photo = int(fps * photo_delay_seconds)
+                active_photo_idx = (int(fps * photo_delay_seconds * len(active_waypoint.photos)) - frames_left_for_photo) // frames_per_photo
+
+                # Draw event card
+                draw = ImageDraw.Draw(frame)
+                title_font = default_font(24, bold=True)
+                body_font = default_font(18)
+
+                title_text = active_waypoint.name or "Etape"
+                description = active_waypoint.description.strip() if active_waypoint.description else ""
+                lines = []
+                if description:
+                    lines = wrap_text_lines(description, max_chars=72)[:6]
+
+                card_x = 20
+                card_y = 20
+                description_y = card_y + 52 + 26 * len(lines) + card_y
+                card_w = min(640, frame.width - 40)
+                card_h = min(description_y, frame.height - 170)
+
+                print(f"Event: {title_text} {card_w}x{card_h} {len(lines)} lines")
+
+                draw.rounded_rectangle(
+                    (card_x, card_y, card_x + card_w, card_y + card_h),
+                    radius=16,
+                    fill=(8, 12, 18, 215),
+                )
+
+                draw.text((card_x + 16, card_y + 14), title_text, font=title_font, fill=(255, 255, 255, 255))
+
+                if description:
+                    y = card_y + 52
+                    for line in lines:
+                        draw.text((card_x + 16, y), line, font=body_font, fill=(218, 226, 235, 255))
+                        y += 26
+
+                # Draw current photo
+                if active_waypoint.photos:
+                    photo = active_waypoint.photos[active_photo_idx % len(active_waypoint.photos)]
+                    draw = ImageDraw.Draw(frame)
+                    pad = 16
+                    img = photo.image
+                    img.thumbnail((frame.height - 170, frame.height - 170), Image.Resampling.LANCZOS)
+
+                    x = frame.width - img.width - 28
+                    y = 28
+
+                    print(f"  - Image: {img.width}x{img.height}")
+
+                    draw.rounded_rectangle((x - pad, y - pad, x + img.width + pad, y + img.height + pad), radius=18, fill=(255, 255, 255, 238))
+                    frame.paste(img, (x, y))
+
+                frames_left_for_photo -= 1
+                if frames_left_for_photo <= 0:
+                    active_waypoint.displayed = True
+                    active_waypoint = None
+            else:
+                # No active waypoint — route is advancing, already handled above
+                pass
+
+            draw.text((28, height - 104), title, font=font_big, fill=(255, 255, 255, 255))
+            km = points[idx].distance_m / 1000
+            elapsed = total_seconds * eased
+            stats = [
+                (f"{km:0.1f} km", "distance"),
+                (format_duration(elapsed), "temps"),
+            ]
+            stat_x = 28
+            stat_y = height - 52
+            for value, label in stats:
+                draw.text((stat_x, stat_y), value, font=font_mid, fill=(255, 255, 255, 255))
+                draw.text((stat_x, stat_y + 30), label, font=font_small, fill=(183, 199, 214, 255))
+                stat_x += 190
+            progress_w = int((width - 56) * eased)
+            draw.rounded_rectangle((28, height - 10, width - 28, height - 4), radius=3, fill=(80, 92, 107, 255))
+            draw.rounded_rectangle((28, height - 10, 28 + progress_w, height - 4), radius=3, fill=(255, 95, 54, 255))
+
+            writer.append_data(np.asarray(frame.convert("RGB"), dtype=np.uint8))
+
+
+# ##############################################################################################
+# build_map
+# ##############################################################################################
+
 def build_map(
     route_points: list[Point],
     width: int,
@@ -381,7 +605,7 @@ def build_map(
     zoom: int,
     cache_dir: Path,
     margin: int,
-) -> tuple[Image.Image, list[tuple[int, int]]]:
+) -> tuple[Image.Image, list[tuple[int, int]], float, float]:
     """Build base map with route points, fetching tiles and compositing.
     
     Args:
@@ -393,7 +617,7 @@ def build_map(
         margin: Margin around route.
         
     Returns:
-        Tuple of (base_image, route_pixel_coords).
+        Tuple of (base_image, route_pixel_coords, offset_x, offset_y).
     """
 
     route_coords = [lonlat_to_world(p.lon, p.lat, zoom) for p in route_points]
@@ -428,308 +652,98 @@ def build_map(
 
     pixels = [(int(x - offset_x), int(y - offset_y)) for x, y in route_coords]
 
-    return base, pixels
+    return base, pixels, offset_x, offset_y
 
 
-def default_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
-    """Load a system font with fallback chain.
+# ##############################################################################################
+# parse_gpx
+# ##############################################################################################
+
+def parse_gpx(path: Path, photos_dir: Path | None = None) -> tuple[list[Point], list[Waypoint]]:
+    """Parse GPX file and extract route points and waypoint events.
     
     Args:
-        size: Font size in points.
-        bold: Load bold variant if True.
+        path: Path to GPX file.
+        photos_dir: Optional directory to search for event photos.
         
     Returns:
-        PIL ImageFont object.
+        Tuple of (route_points, events_by_coord_dict).
     """
-    candidates = [
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/Library/Fonts/Arial Bold.ttf" if bold else "/Library/Fonts/Arial.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).exists():
-            return ImageFont.truetype(candidate, size)
-    return ImageFont.load_default()
+    tree = ET.parse(path)
+    root = tree.getroot()
+
+    # Points
+
+    trk_nodes = [node for node in root.iter() if node.tag.endswith("trkpt")]
+    wpt_nodes = [node for node in root.iter() if node.tag.endswith("wpt")]
+
+    if trk_nodes:
+        source_nodes = trk_nodes
+    else:
+        source_nodes = wpt_nodes
+
+    points = [parse_point_node(node) for node in source_nodes]
+
+    if len(points) < 2:
+        raise ValueError("The GPX file must contain at least two trkpt or wpt points.")
+
+    total = 0.0
+    for idx in range(1, len(points)):
+        total += haversine(points[idx - 1], points[idx])
+        points[idx].distance_m = total
+
+    # Waypoints
+
+    waypoints: list[Waypoint] = []
+
+    for wpt in wpt_nodes:
+        try:
+            wpt_lat = float(wpt.attrib["lat"])
+            wpt_lon = float(wpt.attrib["lon"])
+        except Exception:
+            continue
+
+        name = ""
+        description = ""
+        when = None
+        photo_paths: list[Path] = []
+
+        for child in wpt:
+            tag = child.tag.split("}", 1)[-1]
+            text = (child.text or "").strip()
+            if tag == "time":
+                when = parse_time(text)
+            elif tag == "name":
+                name = text
+            elif tag == "desc":
+                description = text
+            elif tag == "extensions":
+                for ext in child:
+                    ext_tag = ext.tag.split("}", 1)[-1]
+                    ext_text = (ext.text or "").strip()
+                    if ext_tag == "photo" and ext_text:
+                        resolved = resolve_photo_path(ext_text, path, photos_dir)
+                        if resolved is not None:
+                            photo_paths.append(resolved)
+
+        event_photos: list[Photo] = []
+        for photo_path in photo_paths:
+            loaded = load_event_photo(photo_path, caption=None)
+            if loaded is not None:
+                event_photos.append(loaded)
+
+        waypoint = Waypoint(name=name, description=description, lat=wpt_lat, lon=wpt_lon, when=when, displayed=False, photos=event_photos)
+
+        waypoints.append(waypoint)
+
+    return points, waypoints
 
 
-def format_duration(seconds: float) -> str:
-    """Format seconds into human-readable duration string.
-    
-    Args:
-        seconds: Duration in seconds.
-        
-    Returns:
-        Formatted string like '1h 05m' or '3m 42s'.
-    """
-    seconds = max(0, int(seconds))
-    hours, rem = divmod(seconds, 3600)
-    minutes, secs = divmod(rem, 60)
-    if hours:
-        return f"{hours}h {minutes:02d}m"
-    return f"{minutes}m {secs:02d}s"
+# ##############################################################################################
+# relive
+# ##############################################################################################
 
-
-def interpolate_index(points: list[Point], progress: float) -> int:
-    """Find route point index at given progress (0.0-1.0).
-    
-    Args:
-        points: List of route points with cumulative distances.
-        progress: Progress ratio (0.0 to 1.0).
-        
-    Returns:
-        Index of point at or before target distance.
-    """
-    target = points[-1].distance_m * progress
-    lo, hi = 0, len(points) - 1
-    while lo < hi:
-        mid = (lo + hi) // 2
-        if points[mid].distance_m < target:
-            lo = mid + 1
-        else:
-            hi = mid
-    return max(1, lo)
-
-
-def wrap_text_lines(text: str, max_chars: int) -> list[str]:
-    """Wrap text into lines with maximum character width.
-    
-    Args:
-        text: Text to wrap.
-        max_chars: Maximum characters per line.
-        
-    Returns:
-        List of text lines.
-    """
-    words = text.split()
-    if not words:
-        return []
-    lines: list[str] = []
-    current = words[0]
-    for word in words[1:]:
-        candidate = f"{current} {word}"
-        if len(candidate) <= max_chars:
-            current = candidate
-        else:
-            lines.append(current)
-            current = word
-    lines.append(current)
-    return lines
-
-
-def draw_event_card(frame: Image.Image, event: Waypoint) -> None:
-    """Draw waypoint event card with name, description, and photos onto frame.
-    
-    Args:
-        frame: PIL Image frame to draw on.
-        event: Waypoint with name, description, and photos.
-    """
-    photo_delay_seconds = 2.0
-
-    draw = ImageDraw.Draw(frame)
-    title_font = default_font(24, bold=True)
-    body_font = default_font(18)
-
-    card_x = 20
-    card_y = 20
-    card_w = min(640, frame.width - 40)
-    card_h = min(240, frame.height - 170)
-
-    draw.rounded_rectangle(
-        (card_x, card_y, card_x + card_w, card_y + card_h),
-        radius=16,
-        fill=(8, 12, 18, 215),
-    )
-
-    title = event.name or "Etape"
-    draw.text((card_x + 16, card_y + 14), title, font=title_font, fill=(255, 255, 255, 255))
-
-    description = event.description.strip() if event.description else ""
-    if description:
-        lines = wrap_text_lines(description, max_chars=72)[:6]
-        y = card_y + 52
-        for line in lines:
-            draw.text((card_x + 16, y), line, font=body_font, fill=(218, 226, 235, 255))
-            y += 26
-
-    for photo in event.photos:
-        draw = ImageDraw.Draw(frame)
-        pad = 16
-        img = photo.image
-        x = frame.width - img.width - 28
-        y = 28
-        draw.rounded_rectangle((x - pad, y - pad, x + img.width + pad, y + img.height + pad), radius=18, fill=(255, 255, 255, 238))
-        frame.paste(img, (x, y))
-        time.sleep(photo_delay_seconds)
-
-
-def render_video(
-    points: list[Point],
-    base: Image.Image,
-    route_pixels: list[tuple[int, int]],
-    waypoints: list[Waypoint],
-    output: Path,
-    title: str,
-    fps: int,
-    duration: int,
-) -> None:
-    """Render animated video with route and waypoint events.
-    
-    Generates MP4 video showing route animation with progress statistics
-    and waypoint event cards with photos. Events are triggered when nearest
-    waypoint is reached and all photos are displayed sequentially.
-    
-    Args:
-        points: Route points with distance data.
-        base: Base map image.
-        route_pixels: Pixel coordinates for route points.
-        events_by_coord: Waypoint events indexed by coordinate key.
-        output: Output MP4 file path.
-        title: Video title.
-        fps: Frames per second.
-        duration: Video duration in seconds.
-    """
-    width, height = base.size
-    frames = fps * duration
-    font_big = default_font(38, bold=True)
-    font_mid = default_font(25, bold=True)
-    font_small = default_font(21)
-    start_time = points[0].when
-    end_time = points[-1].when
-    total_seconds = (end_time - start_time).total_seconds() if start_time and end_time else duration
-
-    photo_delay_seconds = 2.0
-    total_photos = sum(max(1, len(wpt.photos)) for wpt in waypoints)
-    route_frames = fps * duration
-    frames = route_frames + int(fps * photo_delay_seconds) * total_photos
-    route_frame_no = 0
-    idx = 1
-    eased = 0.0
-    active_waypoint: Waypoint | None = None
-    active_photo_idx = 0
-    frames_left_for_photo = 0
-
-    def find_waypoint(point: Point, previous_point: Point) -> Waypoint | None:
-        """Find the waypoint to the given point."""
-        for waypoint in waypoints:
-            if point.when >= waypoint.when and previous_point.when < waypoint.when and not waypoint.displayed:
-                return waypoint
-        return None
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with imageio.get_writer(output, fps=fps, codec="libx264", quality=8, macro_block_size=8) as writer:
-
-        for frame_no in range(frames):
-            # Only advance route when not currently displaying a waypoint
-            if frames_left_for_photo <= 0:
-                progress = route_frame_no / max(1, route_frames - 1)
-                eased = 1 - (1 - progress) ** 2
-                new_idx = interpolate_index(points, eased)
-
-                waypoint = find_waypoint(points[new_idx], points[idx])
-                if waypoint is not None:
-                    active_waypoint = waypoint
-                    active_photo_idx = 0
-                    frames_left_for_photo = int(fps * photo_delay_seconds * max(1, len(waypoint.photos)))
-
-                idx = new_idx
-                route_frame_no = min(route_frame_no + 1, route_frames - 1)
-
-            frame = base.copy().convert("RGBA")
-            draw = ImageDraw.Draw(frame)
-            if len(route_pixels) > 1:
-                draw.line(route_pixels[: idx + 1], fill=(255, 95, 54, 255), width=9, joint="curve")
-                draw.line(route_pixels[: idx + 1], fill=(255, 230, 90, 255), width=3, joint="curve")
-            marker = route_pixels[idx]
-            draw.ellipse((marker[0] - 13, marker[1] - 13, marker[0] + 13, marker[1] + 13), fill=(255, 255, 255, 255))
-            draw.ellipse((marker[0] - 8, marker[1] - 8, marker[0] + 8, marker[1] + 8), fill=(255, 95, 54, 255))
-
-            if active_waypoint is not None and frames_left_for_photo > 0:
-
-                # Draw active waypoint with current photo
-                frames_per_photo = int(fps * photo_delay_seconds)
-                active_photo_idx = (int(fps * photo_delay_seconds * len(active_waypoint.photos)) - frames_left_for_photo) // frames_per_photo
-
-                # Draw event card
-                draw = ImageDraw.Draw(frame)
-                title_font = default_font(24, bold=True)
-                body_font = default_font(18)
-
-                card_x = 20
-                card_y = 20
-                card_w = min(640, frame.width - 40)
-                card_h = min(240, frame.height - 170)
-
-                draw.rounded_rectangle(
-                    (card_x, card_y, card_x + card_w, card_y + card_h),
-                    radius=16,
-                    fill=(8, 12, 18, 215),
-                )
-
-                title_text = active_waypoint.name or "Etape"
-                draw.text((card_x + 16, card_y + 14), title_text, font=title_font, fill=(255, 255, 255, 255))
-
-                description = active_waypoint.description.strip() if active_waypoint.description else ""
-                if description:
-                    lines = wrap_text_lines(description, max_chars=72)[:6]
-                    y = card_y + 52
-                    for line in lines:
-                        draw.text((card_x + 16, y), line, font=body_font, fill=(218, 226, 235, 255))
-                        y += 26
-
-                # Draw current photo
-                if active_waypoint.photos:
-                    photo = active_waypoint.photos[active_photo_idx % len(active_waypoint.photos)]
-                    draw = ImageDraw.Draw(frame)
-                    pad = 16
-                    img = photo.image
-                    x = frame.width - img.width - 28
-                    y = 28
-                    draw.rounded_rectangle((x - pad, y - pad, x + img.width + pad, y + img.height + pad), radius=18, fill=(255, 255, 255, 238))
-                    frame.paste(img, (x, y))
-
-                frames_left_for_photo -= 1
-                if frames_left_for_photo <= 0:
-                    active_waypoint.displayed = True
-                    active_waypoint = None
-            else:
-                # No active waypoint — route is advancing, already handled above
-                pass
-
-            draw.text((28, height - 104), title, font=font_big, fill=(255, 255, 255, 255))
-            km = points[idx].distance_m / 1000
-            elapsed = total_seconds * eased
-            stats = [
-                (f"{km:0.1f} km", "distance"),
-                (format_duration(elapsed), "temps"),
-            ]
-            stat_x = 28
-            stat_y = height - 52
-            for value, label in stats:
-                draw.text((stat_x, stat_y), value, font=font_mid, fill=(255, 255, 255, 255))
-                draw.text((stat_x, stat_y + 30), label, font=font_small, fill=(183, 199, 214, 255))
-                stat_x += 190
-            progress_w = int((width - 56) * eased)
-            draw.rounded_rectangle((28, height - 10, width - 28, height - 4), radius=3, fill=(80, 92, 107, 255))
-            draw.rounded_rectangle((28, height - 10, 28 + progress_w, height - 4), radius=3, fill=(255, 95, 54, 255))
-
-            writer.append_data(np.asarray(frame.convert("RGB"), dtype=np.uint8))
-
-
-def slug_from_path(path: Path) -> str:
-    """Create URL-safe slug from file path.
-    
-    Args:
-        path: File path.
-        
-    Returns:
-        Lowercase slug with non-alphanumeric chars replaced by hyphens.
-    """
-    name = path.stem.lower()
-    name = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
-    return name or "route"
-
-
-def create_relive_video(
+def relive(
     gpx: Path | str,
     output: Path | str | None = None,
     photos: Path | str | None = None,
@@ -740,6 +754,7 @@ def create_relive_video(
     duration: int = 45,
     zoom: int | None = None,
     tile_cache: Path | str = Path(".tile-cache"),
+    photo_delay: float = 2.0,
 ) -> Path:
     """Build a Relive-like animated video from a GPX track.
     
@@ -756,6 +771,7 @@ def create_relive_video(
         duration: Video duration in seconds (default 45).
         zoom: Map zoom level (default: auto).
         tile_cache: Directory for caching map tiles (default: .tile-cache).
+        photo_delay: Seconds to display each photo (default 2.0).
         
     Returns:
         Path to created MP4 file.
@@ -773,7 +789,14 @@ def create_relive_video(
     video_title = title or gpx_path.stem.replace("_", " ").replace("-", " ").title()
 
     print(f"Loaded {len(points)} route points, zoom {zoom_level}, {len(waypoints)} waypoint(s).")
-    base, route_pixels = build_map(points, width, height, zoom_level, tile_cache_path, margin=60)
-    render_video(points, base, route_pixels, waypoints, output_path, video_title, fps, duration)
+    base, route_pixels, offset_x, offset_y = build_map(points, width, height, zoom_level, tile_cache_path, margin=60)
+
+    # Calculate waypoint pixel coordinates
+    waypoint_pixels = []
+    for waypoint in waypoints:
+        wp_x, wp_y = lonlat_to_world(waypoint.lon, waypoint.lat, zoom_level)
+        waypoint_pixels.append((int(wp_x - offset_x), int(wp_y - offset_y)))
+
+    render_video(points, base, route_pixels, waypoints, output_path, video_title, fps, duration, photo_delay_seconds=photo_delay, waypoint_pixels=waypoint_pixels)
     print(f"Video created: {output_path}")
     return output_path

@@ -199,7 +199,6 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints, elevation):
 
     waypoints = []
     for footprint in footprints:
-        print("")
         waypoint = footprint_to_waypoint(footprint)
         if waypoint is None:
             continue
