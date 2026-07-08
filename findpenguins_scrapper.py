@@ -22,37 +22,40 @@ from relive import relive
 # ##############################################################################################
 
 
-def scrapper(args):
+def process_profile(profile_id, username, password, args):
     """! @brief Run end-to-end scraping workflow for one profile.
-    @param args Parsed CLI arguments (id, credentials, output options).
+    @param profile_id Profile ID to scrape.
+    @param username Username for authentication.
+    @param password Password for authentication.
+    @param args Parsed CLI arguments (output options, flags).
     @return None
     @exception RuntimeError Raised when requested single trip slug is not found.
     """
 
-    session = login(args.username, args.password)
+    session = login(username, password)
     playwright, browser, page = create_browser_page(session)
 
-    output_dir = os.path.join(args.output, args.id)
+    output_dir = os.path.join(args.output, profile_id)
     os.makedirs(output_dir, exist_ok=True)
 
     try:
         # Parse profile
-        print(f"Parsing profile [{args.id}] ...")
+        print(f"Parsing profile [{profile_id}] ...")
 
-        soup = load_page(page, urljoin(BASE_URL, args.id), output_dir, save_html=args.save_html)
+        soup = load_page(page, urljoin(BASE_URL, profile_id), output_dir, save_html=args.save_html)
 
         user_data = parse_profile(soup)
-        user_data["uid"] = args.id
-        user_data["email"] = args.username or ""
+        user_data["uid"] = profile_id
+        user_data["email"] = username or ""
         profile_picture_url = str(user_data.get("picture", "")).strip()
         if profile_picture_url:
             try:
-                local_picture = download_image(profile_picture_url, output_dir, prefix=f"{args.id}_profile")
+                local_picture = download_image(profile_picture_url, output_dir, prefix=f"{profile_id}_profile")
                 user_data["picture"] = os.path.relpath(local_picture, output_dir)
             except Exception as e:
                 print(f"  WARNING: profile picture download failed: {e}")
 
-        trips = parse_trips(soup, args.id)
+        trips = parse_trips(soup, profile_id)
 
         if args.trip:
             trips = [trip for trip in trips if trip["slug"] == args.trip]
@@ -113,7 +116,7 @@ def scrapper(args):
 
             # Build and save user XML
             xml_tree = build_user_xml(user_data, trips)
-            output_xml = os.path.join(output_dir, args.id + ".xml")
+            output_xml = os.path.join(output_dir, profile_id + ".xml")
             xml_tree.write(output_xml, encoding="utf-8", xml_declaration=True)
 
             print(f"✅ Complete! XML: {output_xml}")
@@ -126,6 +129,35 @@ def scrapper(args):
         browser.close()
         playwright.stop()
 
+
+# ##############################################################################################
+# scrapper
+# ##############################################################################################
+
+
+def scrapper(args):
+    """! @brief Run scraping workflow for one or more profiles.
+    @param args Parsed CLI arguments (profiles triplets, output options).
+    @return None
+    """
+    # Parse profile triplets (id, username, password)
+    profiles = args.profile if args.profile else []
+    
+    if not profiles:
+        print("ERROR: At least one --profile is required (format: --profile id username password)")
+        return
+    
+    # Process each profile
+    for idx, (profile_id, username, password) in enumerate(profiles):
+        print(f"\n{'='*60}")
+        print(f"Processing profile {idx + 1}/{len(profiles)}: {profile_id}")
+        print(f"{'='*60}\n")
+        
+        try:
+            process_profile(profile_id, username, password, args)
+        except Exception as e:
+            print(f"\n❌ ERROR processing profile {profile_id}: {e}\n")
+
 # ##############################################################################################
 # __main__
 # ##############################################################################################
@@ -135,11 +167,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
                 prog='FindPenguins scrapper',
-                description='Scrap FindPenguins profile')
+                description='Scrap one or more FindPenguins profiles')
 
-    parser.add_argument("-i", "--id", required=True, help="Profile id")
-    parser.add_argument("-u", "--username", default=None, help="Username")
-    parser.add_argument("-p", "--password", default=None, help="Password")
+    parser.add_argument("--profile", action='append', nargs=3, required=True, metavar=('ID', 'USERNAME', 'PASSWORD'),
+                        help="Profile triplet: id username password (can be used multiple times)")
     parser.add_argument("-o", "--output", default="output", help="Output folder")
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
     parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")

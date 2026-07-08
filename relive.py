@@ -269,7 +269,7 @@ def lonlat_to_world(lon: float, lat: float, zoom: int) -> tuple[float, float]:
 # ##############################################################################################
 
 def choose_zoom(points: list[Point], width: int, height: int, margin: int) -> int:
-    """Choose optimal zoom level to fit all points with margin.
+    """Choose optimal zoom level to fit all points with 5% buffer and pixel margin.
     
     Args:
         points: List of points to fit.
@@ -278,17 +278,31 @@ def choose_zoom(points: list[Point], width: int, height: int, margin: int) -> in
         margin: Margin around points in pixels.
         
     Returns:
-        Zoom level (6-17).
+        Zoom level (2-17).
     """
     usable_w = width - 2 * margin
     usable_h = height - 2 * margin - 120
-    for zoom in range(17, 7, -1):
-        coords = [lonlat_to_world(p.lon, p.lat, zoom) for p in points]
-        xs = [c[0] for c in coords]
-        ys = [c[1] for c in coords]
-        if max(xs) - min(xs) <= usable_w and max(ys) - min(ys) <= usable_h:
-            return zoom
-    return 6
+
+    # Compute bounding span at zoom 0 once — spans scale exactly by 2^zoom,
+    # so we avoid calling lonlat_to_world N×16 times and derive zoom analytically.
+    coords = [lonlat_to_world(p.lon, p.lat, 0) for p in points]
+    xs = [c[0] for c in coords]
+    ys = [c[1] for c in coords]
+    span_w0 = max(xs) - min(xs)
+    span_h0 = max(ys) - min(ys)
+
+    if span_w0 == 0.0 and span_h0 == 0.0:
+        return 15  # single point: use a close-up zoom
+
+    # At zoom Z: span = span0 * 2^Z  — need span * 1.05 <= usable
+    # 2^Z <= usable / (span0 * 1.05)  →  Z <= log2(usable / (span0 * 1.05))
+    max_zoom = 17
+    if span_w0 > 0:
+        max_zoom = min(max_zoom, math.floor(math.log2(usable_w / (span_w0 * 1.05))))
+    if span_h0 > 0:
+        max_zoom = min(max_zoom, math.floor(math.log2(usable_h / (span_h0 * 1.05))))
+
+    return max(2, min(17, max_zoom))
 
 
 # ##############################################################################################
@@ -534,7 +548,7 @@ def render_video(
                 card_w = min(640, frame.width - 40)
                 card_h = min(description_y, frame.height - 170)
 
-                print(f"Event: {title_text} {card_w}x{card_h} {len(lines)} lines")
+                # print(f"Event: {title_text} {card_w}x{card_h} {len(lines)} lines")
 
                 draw.rounded_rectangle(
                     (card_x, card_y, card_x + card_w, card_y + card_h),
@@ -561,7 +575,7 @@ def render_video(
                     x = frame.width - img.width - 28
                     y = 28
 
-                    print(f"  - Image: {img.width}x{img.height}")
+                    # print(f"  - Image: {img.width}x{img.height}")
 
                     draw.rounded_rectangle((x - pad, y - pad, x + img.width + pad, y + img.height + pad), radius=18, fill=(255, 255, 255, 238))
                     frame.paste(img, (x, y))
