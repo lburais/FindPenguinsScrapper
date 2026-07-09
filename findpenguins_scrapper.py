@@ -101,6 +101,7 @@ def process_profile(profile_id, username, password, args):
                             zoom=args.relive_zoom,
                             tile_cache=args.relive_tile_cache,
                             photo_delay=float(args.relive_photo)/1000.0,
+                            relive_focus=float(args.relive_focus),
                         )
                     except Exception as e:
                         print(f"  WARNING: relive generation failed for [{trip['slug']}]: {e}")
@@ -177,11 +178,12 @@ if __name__ == "__main__":
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
     parser.add_argument("--relive", action="store_true", help="Generate Relive-style MP4 for each processed trip")
     parser.add_argument("--relive-photo", type=int, default=500, help="Relive photo duration in ms")
-    parser.add_argument("--relive-width", type=int, default=1366, help="Relive video width")
+    parser.add_argument("--relive-width", type=int, default=1368, help="Relive video width")
     parser.add_argument("--relive-height", type=int, default=1024, help="Relive video height")
     parser.add_argument("--relive-fps", type=int, default=10, help="Relive video FPS")
     parser.add_argument("--relive-duration", type=int, default=60, help="Relive video duration in seconds")
     parser.add_argument("--relive-zoom", type=int, default=None, help="Relive map zoom level")
+    parser.add_argument("--relive-focuse", type=int, default=0, help="Relive track focus level")
     parser.add_argument("--relive-tile-cache", default=".tile-cache", help="Relive tile cache directory")
 
     arguments = parser.parse_args()

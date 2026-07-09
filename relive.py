@@ -291,6 +291,11 @@ def choose_zoom(points: list[Point], width: int, height: int, margin: int) -> in
     span_w0 = max(xs) - min(xs)
     span_h0 = max(ys) - min(ys)
 
+    xc = [p.lon for p in points]
+    yc = [p.lat for p in points]
+    print(f"ZOOM w0: {span_w0} h0: {span_h0} width: {usable_w} height: {usable_h}")
+    print(f"ZOOM min lon: {min(xc)} max lon: {max(xc)} min lat: {min(yc)} max lat: {max(yc)}")
+
     if span_w0 == 0.0 and span_h0 == 0.0:
         return 15  # single point: use a close-up zoom
 
@@ -298,9 +303,11 @@ def choose_zoom(points: list[Point], width: int, height: int, margin: int) -> in
     # 2^Z <= usable / (span0 * 1.05)  →  Z <= log2(usable / (span0 * 1.05))
     max_zoom = 17
     if span_w0 > 0:
-        max_zoom = min(max_zoom, math.floor(math.log2(usable_w / (span_w0 * 1.05))))
+        max_zoom = min(max_zoom, math.floor(math.log2(usable_w / span_w0)))
+        #max_zoom = min(max_zoom, math.floor(math.log2(usable_w / (span_w0 * 1.05))))
     if span_h0 > 0:
-        max_zoom = min(max_zoom, math.floor(math.log2(usable_h / (span_h0 * 1.05))))
+        max_zoom = min(max_zoom, math.floor(math.log2(usable_h / span_h0)))
+        #max_zoom = min(max_zoom, math.floor(math.log2(usable_h / (span_h0 * 1.05))))
 
     return max(2, min(17, max_zoom))
 
@@ -429,16 +436,18 @@ def render_video(
     duration: int,
     photo_delay_seconds: float = 2.0,
     waypoint_pixels: list[tuple[int, int]] | None = None,
+    zoom_level: int = 12,
+    relive_focus: float = 0.0,
 ) -> None:
     """Render animated video with route and waypoint events.
     
     Generates MP4 video showing route animation with progress statistics
-    and waypoint event cards with photos. Events are triggered when nearest
-    waypoint is reached and all photos are displayed sequentially.
+    and waypoint event cards with photos. Dynamically zooms on track point
+    based on relive_focus, converging to full map view at end.
     
     Args:
         points: Route points with distance data.
-        base: Base map image.
+        base: Base map image (at zoom_level).
         route_pixels: Pixel coordinates for route points.
         waypoints: List of waypoint events.
         output: Output MP4 file path.
@@ -447,11 +456,14 @@ def render_video(
         duration: Video duration in seconds.
         photo_delay_seconds: Seconds to display each photo (default 2.0).
         waypoint_pixels: Pixel coordinates for waypoints (default None).
+        zoom_level: Base map zoom level (default 12).
+        relive_focus: Zoom focus factor in stops; 0=no focus, positive=zoom in on track (default 0.0).
     """
     if waypoint_pixels is None:
         waypoint_pixels = []
 
     width, height = base.size
+    map_area_h = height - 120
     # frames = fps * duration
     font_big = default_font(38, bold=True)
     font_mid = default_font(25, bold=True)
@@ -509,85 +521,110 @@ def render_video(
                 idx = new_idx
                 route_frame_no = min(route_frame_no + 1, route_frames - 1)
 
-            frame = base.copy().convert("RGBA")
+            # Calculate dynamic zoom based on progress (zoom out from start to end)
+            current_zoom = zoom_level + relive_focus * (1 - eased) if relive_focus > 0 else zoom_level
+            
+            # Crop/pan base map based on dynamic zoom and track point position
+            if relive_focus > 0:
+                scale = 2 ** (current_zoom - zoom_level)
+                crop_w = width / scale
+                crop_h = map_area_h / scale
+                marker = route_pixels[idx]
+                crop_x = marker[0] - crop_w / 2
+                crop_y = marker[1] - crop_h / 2
+                crop_x = max(0, min(crop_x, width - crop_w))
+                crop_y = max(0, min(crop_y, base.height - crop_h))
+                cropped = base.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
+                frame = cropped.resize((width, map_area_h), Image.Resampling.LANCZOS).convert("RGBA")
+                px_offset = crop_x
+                py_offset = crop_y
+            else:
+                frame = base.copy().convert("RGBA")
+                px_offset = 0
+                py_offset = 0
+            
+            extended = Image.new("RGBA", (width, height), (16, 22, 30, 235))
+            extended.paste(frame, (0, 0))
+            frame = extended
+            
             draw = ImageDraw.Draw(frame)
             if len(route_pixels) > 1:
-                draw.line(route_pixels[: idx + 1], fill=(255, 95, 54, 255), width=3, joint="curve")
-                draw.line(route_pixels[: idx + 1], fill=(255, 230, 90, 255), width=1, joint="curve")
-            # Draw waypoint ellipses for reached waypoints
+                adjusted_pixels = [(p[0] - px_offset, p[1] - py_offset) for p in route_pixels[: idx + 1]]
+                draw.line(adjusted_pixels, fill=(255, 95, 54, 255), width=3, joint="curve")
+                draw.line(adjusted_pixels, fill=(255, 230, 90, 255), width=1, joint="curve")
+            
             for wp_idx, waypoint in enumerate(waypoints):
                 if waypoint.displayed and wp_idx < len(waypoint_pixels):
                     wp_marker = waypoint_pixels[wp_idx]
-                    draw.ellipse((wp_marker[0] - 10, wp_marker[1] - 10, wp_marker[0] + 10, wp_marker[1] + 10), fill=(255, 255, 255, 255))
-                    draw.ellipse((wp_marker[0] - 6, wp_marker[1] - 6, wp_marker[0] + 6, wp_marker[1] + 6), fill=(100, 200, 100, 255))
-
+                    adj_x, adj_y = wp_marker[0] - px_offset, wp_marker[1] - py_offset
+                    if 0 <= adj_x < width and 0 <= adj_y < map_area_h:
+                        draw.ellipse((adj_x - 10, adj_y - 10, adj_x + 10, adj_y + 10), fill=(255, 255, 255, 255))
+                        draw.ellipse((adj_x - 6, adj_y - 6, adj_x + 6, adj_y + 6), fill=(100, 200, 100, 255))
+            
             marker = route_pixels[idx]
-            draw.ellipse((marker[0] - 13, marker[1] - 13, marker[0] + 13, marker[1] + 13), fill=(255, 255, 255, 255))
-            draw.ellipse((marker[0] - 8, marker[1] - 8, marker[0] + 8, marker[1] + 8), fill=(255, 95, 54, 255))
+            marker_x, marker_y = marker[0] - px_offset, marker[1] - py_offset
+            draw.ellipse((marker_x - 13, marker_y - 13, marker_x + 13, marker_y + 13), fill=(255, 255, 255, 255))
+            draw.ellipse((marker_x - 8, marker_y - 8, marker_x + 8, marker_y + 8), fill=(255, 95, 54, 255))
 
             if active_waypoint is not None and frames_left_for_photo > 0:
-
-                # Draw active waypoint with current photo
                 frames_per_photo = int(fps * photo_delay_seconds)
                 active_photo_idx = (int(fps * photo_delay_seconds * len(active_waypoint.photos)) - frames_left_for_photo) // frames_per_photo
-
-                # Draw event card
-                draw = ImageDraw.Draw(frame)
-                title_font = default_font(24, bold=True)
-                body_font = default_font(18)
-
-                title_text = active_waypoint.name or "Etape"
-                description = active_waypoint.description.strip() if active_waypoint.description else ""
-                lines = []
-                if description:
-                    lines = wrap_text_lines(description, max_chars=72)[:6]
-
-                card_x = 20
-                card_y = 20
-                description_y = card_y + 52 + 26 * len(lines) + card_y
-                card_w = min(640, frame.width - 40)
-                card_h = min(description_y, frame.height - 170)
-
-                # print(f"Event: {title_text} {card_w}x{card_h} {len(lines)} lines")
-
-                draw.rounded_rectangle(
-                    (card_x, card_y, card_x + card_w, card_y + card_h),
-                    radius=16,
-                    fill=(8, 12, 18, 215),
-                )
-
-                draw.text((card_x + 16, card_y + 14), title_text, font=title_font, fill=(255, 255, 255, 255))
-
-                if description:
-                    y = card_y + 52
-                    for line in lines:
-                        draw.text((card_x + 16, y), line, font=body_font, fill=(218, 226, 235, 255))
-                        y += 26
-
-                # Draw current photo
+                
                 if active_waypoint.photos:
                     photo = active_waypoint.photos[active_photo_idx % len(active_waypoint.photos)]
                     draw = ImageDraw.Draw(frame)
+                    
+                    title_text = active_waypoint.name or "Etape"
+                    description = active_waypoint.description.strip() if active_waypoint.description else ""
+                    lines = wrap_text_lines(description, max_chars=60)[:3] if description else []
+                    caption_text = photo.caption or ""
+                    
+                    max_photo_h = map_area_h - 40
+                    img = photo.image.copy()
+                    img.thumbnail((width - 60, max_photo_h), Image.Resampling.LANCZOS)
+                    photo_x = (width - img.width) // 2
+                    photo_y = (map_area_h - img.height) // 2
+                    
                     pad = 16
-                    img = photo.image
-                    img.thumbnail((frame.height - 170, frame.height - 170), Image.Resampling.LANCZOS)
-
-                    x = frame.width - img.width - 28
-                    y = 28
-
-                    # print(f"  - Image: {img.width}x{img.height}")
-
-                    draw.rounded_rectangle((x - pad, y - pad, x + img.width + pad, y + img.height + pad), radius=18, fill=(255, 255, 255, 238))
-                    frame.paste(img, (x, y))
-
+                    card_x = photo_x - pad
+                    card_y = photo_y - pad - 60
+                    card_w = img.width + 2 * pad
+                    card_h = img.height + 2 * pad + 60 + (40 if caption_text else 0)
+                    
+                    draw.rounded_rectangle(
+                        (card_x, card_y, card_x + card_w, card_y + card_h),
+                        radius=18,
+                        fill=(8, 12, 18, 215),
+                    )
+                    
+                    title_font = default_font(22, bold=True)
+                    body_font = default_font(16)
+                    text_x = card_x + 12
+                    text_y = card_y + 8
+                    draw.text((text_x, text_y), title_text, font=title_font, fill=(255, 255, 255, 255))
+                    
+                    if lines:
+                        text_y += 28
+                        for line in lines:
+                            draw.text((text_x, text_y), line, font=body_font, fill=(218, 226, 235, 255))
+                            text_y += 20
+                    
+                    if caption_text:
+                        caption_lines = wrap_text_lines(caption_text, max_chars=50)[:2]
+                        caption_y = card_y + card_h - 35
+                        caption_font = default_font(14)
+                        for cline in caption_lines:
+                            draw.text((text_x, caption_y), cline, font=caption_font, fill=(200, 220, 240, 255))
+                            caption_y += 18
+                    
+                    frame.paste(img, (photo_x, photo_y))
+                
                 frames_left_for_photo -= 1
                 if frames_left_for_photo <= 0:
                     active_waypoint.displayed = True
                     active_waypoint = None
-            else:
-                # No active waypoint — route is advancing, already handled above
-                pass
 
+            draw = ImageDraw.Draw(frame)
             draw.text((28, height - 104), title, font=font_big, fill=(255, 255, 255, 255))
             km = points[idx].distance_m / 1000
             elapsed = total_seconds * eased
@@ -769,6 +806,7 @@ def relive(
     zoom: int | None = None,
     tile_cache: Path | str = Path(".tile-cache"),
     photo_delay: float = 2.0,
+    relive_focus: float = 0.0,
 ) -> Path:
     """Build a Relive-like animated video from a GPX track.
     
@@ -786,6 +824,7 @@ def relive(
         zoom: Map zoom level (default: auto).
         tile_cache: Directory for caching map tiles (default: .tile-cache).
         photo_delay: Seconds to display each photo (default 2.0).
+        relive_focus: Zoom focus factor in stops; 0=no focus (default 0.0).
         
     Returns:
         Path to created MP4 file.
@@ -811,6 +850,6 @@ def relive(
         wp_x, wp_y = lonlat_to_world(waypoint.lon, waypoint.lat, zoom_level)
         waypoint_pixels.append((int(wp_x - offset_x), int(wp_y - offset_y)))
 
-    render_video(points, base, route_pixels, waypoints, output_path, video_title, fps, duration, photo_delay_seconds=photo_delay, waypoint_pixels=waypoint_pixels)
+    render_video(points, base, route_pixels, waypoints, output_path, video_title, fps, duration, photo_delay_seconds=photo_delay, waypoint_pixels=waypoint_pixels, zoom_level=zoom_level, relive_focus=relive_focus)
     print(f"Video created: {output_path}")
     return output_path
