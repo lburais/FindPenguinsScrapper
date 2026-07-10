@@ -322,3 +322,44 @@ def build_user_xml(user_data, trips):
 
     tree = ET.ElementTree(root)
     return format_tree(tree)
+
+
+def build_merged_xml(profiles_data):
+    """! @brief Build a merged XML index combining multiple user profiles.
+    @param profiles_data List of (user_data, trips) tuples, one per profile.
+    @return Formatted ElementTree with all profiles under a root <profiles> element.
+    """
+    print("  - Building merged XML...")
+
+    root = ET.Element("profiles")
+
+    for user_data, trips in profiles_data:
+        profile_el = ET.SubElement(root, "profile")
+
+        user_order = ["uid", "name", "bio", "location", "website", "picture"]
+        for key in user_order:
+            if key in user_data:
+                add_text_element(profile_el, key, user_data[key], namespace=None)
+
+        for key, value in user_data.items():
+            if key in user_order:
+                continue
+            add_text_element(profile_el, key, value, namespace=None)
+
+        trips_el = ET.SubElement(profile_el, "trips")
+        for trip in trips:
+            trip_el = ET.SubElement(trips_el, "trip")
+            for key, value in trip.items():
+                if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current"]:
+                    continue
+                add_text_element(trip_el, key, value, namespace=None)
+
+            gpx_ref = ET.SubElement(trip_el, "gpx")
+            gpx_ref.text = trip.get("gpx", "")
+
+            for companion in trip.get("companions", []):
+                companion_el = ET.SubElement(trip_el, "companion")
+                companion_el.text = str(companion.get("uid", "")).strip()
+
+    tree = ET.ElementTree(root)
+    return format_tree(tree)

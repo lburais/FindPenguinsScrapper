@@ -14,8 +14,7 @@ from urllib.parse import urljoin
 from fp_config import BASE_URL
 from fp_utils import login, create_browser_page, load_page, download_image
 from fp_parsers import parse_profile, parse_trips, parse_trip
-from fp_writers import build_trip_gpx, build_user_xml
-from relive import relive
+from fp_writers import build_trip_gpx, build_user_xml, build_merged_xml
 
 # ##############################################################################################
 # scrapper
@@ -85,27 +84,6 @@ def process_profile(profile_id, username, password, args):
 
                 build_trip_gpx(trip_gpx, user_data, trip, footprints, args.elevation)
 
-                if args.relive:
-                    relive_output = os.path.join(output_dir, trip["slug"] + ".mp4")
-                    print(f"  - Building Relive video [{relive_output}] ...")
-                    try:
-                        relive(
-                            gpx=trip_gpx,
-                            photos=photos_dir,
-                            title=trip.get("title", ""),
-                            output=relive_output,
-                            width=args.relive_width,
-                            height=args.relive_height,
-                            fps=args.relive_fps,
-                            duration=args.relive_duration,
-                            zoom=args.relive_zoom,
-                            tile_cache=args.relive_tile_cache,
-                            photo_delay=float(args.relive_photo)/1000.0,
-                            relive_focus=float(args.relive_focus),
-                        )
-                    except Exception as e:
-                        print(f"  WARNING: relive generation failed for [{trip['slug']}]: {e}")
-
                 old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
                 if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
                     os.remove(old_trip_gpx)
@@ -126,6 +104,7 @@ def process_profile(profile_id, username, password, args):
 
         # ET.indent(xml_tree.getroot(), space="  ", level=0)
         # print( ET.tostring(xml_tree.getroot(), encoding="unicode", method="xml" ))
+        return user_data, trips
     finally:
         browser.close()
         playwright.stop()
@@ -148,16 +127,30 @@ def scrapper(args):
         print("ERROR: At least one --profile is required (format: --profile id username password)")
         return
     
-    # Process each profile
+    # Process each profile, collecting results for merged XML
+    collected = []
     for idx, (profile_id, username, password) in enumerate(profiles):
         print(f"\n{'='*60}")
         print(f"Processing profile {idx + 1}/{len(profiles)}: {profile_id}")
         print(f"{'='*60}\n")
         
         try:
-            process_profile(profile_id, username, password, args)
+            result = process_profile(profile_id, username, password, args)
+            if result is not None:
+                collected.append(result)
         except Exception as e:
             print(f"\n❌ ERROR processing profile {profile_id}: {e}\n")
+
+    # Write merged XML when multiple profiles were processed
+    if len(collected) > 1:
+        print(f"\n{'='*60}")
+        print("Building merged XML for all profiles...")
+        print(f"{'='*60}\n")
+        merged_tree = build_merged_xml(collected)
+        merged_xml = os.path.join(args.output, "profiles.xml")
+        os.makedirs(args.output, exist_ok=True)
+        merged_tree.write(merged_xml, encoding="utf-8", xml_declaration=True)
+        print(f"✅ Merged XML: {merged_xml}")
 
 # ##############################################################################################
 # __main__
@@ -176,15 +169,6 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
     parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
-    parser.add_argument("--relive", action="store_true", help="Generate Relive-style MP4 for each processed trip")
-    parser.add_argument("--relive-photo", type=int, default=500, help="Relive photo duration in ms")
-    parser.add_argument("--relive-width", type=int, default=1368, help="Relive video width")
-    parser.add_argument("--relive-height", type=int, default=1024, help="Relive video height")
-    parser.add_argument("--relive-fps", type=int, default=10, help="Relive video FPS")
-    parser.add_argument("--relive-duration", type=int, default=60, help="Relive video duration in seconds")
-    parser.add_argument("--relive-zoom", type=int, default=None, help="Relive map zoom level")
-    parser.add_argument("--relive-focuse", type=int, default=0, help="Relive track focus level")
-    parser.add_argument("--relive-tile-cache", default=".tile-cache", help="Relive tile cache directory")
 
     arguments = parser.parse_args()
 
