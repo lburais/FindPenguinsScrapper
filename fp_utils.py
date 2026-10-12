@@ -214,6 +214,38 @@ def download_image(img_url, dest_folder, prefix="img"):
     return local_path
 
 
+def download_video(video_url, dest_folder, prefix="vid"):
+    """! @brief Download one video and save it to local storage (skipped when already present).
+    @param video_url Remote video URL.
+    @param dest_folder Destination directory path.
+    @param prefix Filename prefix prepended to saved video name.
+    @return Local path of the saved file.
+    @exception requests.RequestException Raised on HTTP failures.
+    """
+
+    os.makedirs(dest_folder, exist_ok=True)
+    if video_url.startswith("//"):
+        video_url = "https:" + video_url
+    elif video_url.startswith("/"):
+        video_url = urljoin(BASE_URL, video_url)
+
+    filename = os.path.basename(urlparse(video_url).path) or "video.mp4"
+    local_path = os.path.join(dest_folder, f"{prefix}_{filename}")
+    if os.path.exists(local_path):
+        return local_path
+
+    # Download to a temp name so an interrupted transfer is never mistaken for a finished file.
+    partial_path = local_path + ".part"
+    with requests.get(video_url, headers=HEADERS, stream=True, timeout=60) as resp:
+        resp.raise_for_status()
+        with open(partial_path, "wb") as f:
+            for chunk in resp.iter_content(1024 * 256):
+                if chunk:
+                    f.write(chunk)
+    os.replace(partial_path, local_path)
+    return local_path
+
+
 def requests_cookies_to_playwright(session):
     """! @brief Convert requests cookies into Playwright cookie objects.
     @param session Authenticated requests session.

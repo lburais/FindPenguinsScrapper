@@ -1,26 +1,120 @@
-# Find Penguins Scrapper
-This project contains tree scripts for transforming Find Penguins Trips Into XML or PDF or HTML documents.
+# FindPenguinsScrapper 🐧✈️
 
-## Downloading Trips
-The first script is the `penguin_scrapper.py` which requires two arguments, the storage path and the trip. This script will download all footprints, including text and images from the given trip into the given directory.
-Usage:
+Un outil puissant en Python permettant d'extraire, sauvegarder et archiver localement l'intégralité des données de profils **FindPenguins** (publics ou privés). 
+
+Ce script orchestre l'authentification, le scraping des données dynamiques (textes, météo, coordonnées, overnights) et télécharge localement l'ensemble des médias (photos et vidéos). Il génère à la fois des structures d'archivage standards (**GPX**, **XML**) et un rendu visuel sous forme de **Livre de Voyage numérique (HTML)** interactif et autonome.
+
+---
+
+## ✨ Fonctionnalités
+
+- **Extraction Complète :** Récupération de la biographie de l'utilisateur, de la liste des voyages, des étapes (*footprints*), récits, dates, altitudes et relevés météo.
+- **Double Support (Public & Privé) :** Connexion sécurisée par simulation de navigateur permettant d'accéder aux comptes privés ou brouillons.
+- **Hébergement Multi-Profils :** Possibilité de scraper plusieurs comptes d'un coup avec fusion automatique des indexes.
+- **Export de Données Géographiques :** 
+  - Restitution d'un fichier **GPX 1.1** standardisé par voyage avec intégration des waypoints et métadonnées enrichies.
+  - Enrichissement optionnel des altitudes des traces via des API topographiques externes (SRTM90m).
+- **Livre Photo Numérique Automone (HTML) :**
+  - Génération de pages HTML locales adoptant le style épuré et élégant des *Travel Books* imprimés de FindPenguins.
+  - Intégration de cartes géographiques interactives **Leaflet** (basées sur OpenStreetMap) lisibles entièrement hors-ligne.
+  - Lecteurs vidéo HTML5 natifs intégrés directement dans le fil des récits.
+
+---
+
+## 📂 Architecture du Projet
+
+Le projet est structuré de manière hautement modulaire :
+
+```text
+├── findpenguins_scrapper.py # Point d'entrée CLI et orchestrateur principal
+├── fp_config.py             # Configuration centrale (endpoints, headers, namespaces)
+├── fp_utils.py              # Utilitaires (navigation Playwright, gestion des cookies, téléchargements)
+├── fp_parsers.py            # Extraction des données et parsing DOM (BeautifulSoup)
+├── fp_writers.py            # Sérialisation des sorties (génération GPX, XML et templates HTML)
+├── elevation.py             # Module d'enrichissement et de lissage des altitudes topographiques
+└── profiles.json            # (Optionnel) Fichier de gestion sécurisée des identifiants
 ```
-python3 penguin_parser.py <path-to-local-storage-directory> "<find-penguins-user>/trip/<trip-name>"
+
+---
+
+## 🚀 Prérequis et Installation
+
+### 1. Cloner le dépôt
+```bash
+git clone https://github.com
+cd FindPenguinsScrapper
 ```
 
-After termination, the storage path should contain folders for the days inside of which folders for the different footprints are located. These folders contain the images as well as a json file for the meta information.
-
-## Generators
-At the moment, two generators exist. These generators are supposed to take the data inside of the previously created storage directory and convert it into another representation.
-Generators expect two arguments, the storage path and the trip title. The latter is free text.
-
-* `pdf_generator.py` creates a PDF
-* `html_generator.py`creates a HTML document
-
-Usage:
-```
-python3 pdf_generator.py <path-to-local-storage-directory> "<your-trip-title>"
+### 2. Installer les dépendances Python
+Le script s'appuie sur plusieurs bibliothèques majeures (`requests`, `beautifulsoup4`, `playwright`, `scipy`, `numpy`) :
+```bash
+pip install -r requirements.txt
+# Ou manuellement :
+pip install requests beautifulsoup4 playwright numpy scipy
 ```
 
-## Requirements
-All scripts require Python 3 and the requirements, specified in the `requirements.txt`.
+### 3. Initialiser Playwright
+Le projet utilise un navigateur Chromium automatisé pour charger le contenu dynamique et interagir avec les menus de FindPenguins :
+```bash
+playwright install chromium
+```
+
+---
+
+## ⚙️ Utilisation
+
+Le script s'exécute en ligne de commande (CLI) et propose plusieurs arguments de configuration :
+
+### Méthode Directe (En passant les identifiants)
+```bash
+python findpenguins_scrapper.py --profile <ID_PROFIL> <EMAIL_CONNEXION> <MOT_DE_PASSE>
+```
+
+### Méthode Sécurisée (Via le fichier `profiles.json`)
+Vous pouvez créer un fichier `profiles.json` à la racine pour stocker de manière hermétique vos profils :
+```json
+{
+  "MonVoyageur": {
+    "id": "pseudo_findpenguins",
+    "username": "votre_email@exemple.com",
+    "password": "votre_mot_de_passe"
+  }
+}
+```
+Lancez ensuite simplement l'extraction par le nom du profil :
+```bash
+python findpenguins_scrapper.py --profile-name MonVoyageur
+```
+
+### Options Disponibles
+- `-o`, `--output` : Spécifier le dossier de destination (Par défaut : `output`).
+- `-t`, `--trip` : Isoler et parser uniquement un voyage spécifique via son slug d'URL.
+- `--elevation` : Activer la correction et l'enrichissement des données d'altitude sur les tracés GPX.
+- `--save-html` : Conserver les captures HTML brutes téléchargées à des fins de débogage.
+
+---
+
+## 💾 Structure de l'Archive Générée (`output/`)
+
+Une fois le scraping terminé, le dossier de sortie est structuré de manière étanche et autonome :
+
+```text
+output/
+└── pseudo_findpenguins/
+    ├── pseudo_findpenguins.xml # Index XML complet du profil
+    ├── index.html              # Page d'accueil du profil (Style étagère de livres)
+    ├── voyage-islande.gpx      # Fichier GPX du parcours avec waypoints enrichis
+    └── voyage-islande/         # Livre numérique dédié au voyage
+        ├── index.html          # Sommaire chronologique et carte globale du voyage
+        ├── etape_1.html        # Récit, carteLeaflet et photos de l'étape 1
+        ├── etape_2.html        
+        ├── img_12345_pic.jpg   # Photos téléchargées localement
+        └── vid_67890_mov.mp4   # Vidéos téléchargées localement
+```
+
+---
+
+## 🔒 Sécurité & Bonnes Pratiques
+
+- **Respect des quotas :** Le module d'élévation intègre une gestion adaptative du *Rate Limiting* (attente exponentielle en cas de code HTTP 429) pour ne pas saturer les serveurs tiers.
+- **Fichier `.gitignore` :** Si vous publiez ce projet sur un dépôt public (GitHub), veillez à ajouter votre fichier `profiles.json` à votre `.gitignore` pour protéger vos identifiants FindPenguins.

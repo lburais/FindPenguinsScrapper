@@ -7,6 +7,7 @@ produce one user XML index plus one GPX file per trip.
 """
 
 import argparse
+import json
 import os
 import shutil
 from urllib.parse import urljoin
@@ -14,7 +15,7 @@ from urllib.parse import urljoin
 from fp_config import BASE_URL
 from fp_utils import login, create_browser_page, load_page, download_image
 from fp_parsers import parse_profile, parse_trips, parse_trip
-from fp_writers import build_trip_gpx, build_user_xml, build_merged_xml
+from fp_writers import build_trip_gpx, build_user_xml, build_merged_xml, build_trip_html, build_user_html, build_global_html
 
 # ##############################################################################################
 # scrapper
@@ -83,6 +84,7 @@ def process_profile(profile_id, username, password, args):
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
 
                 build_trip_gpx(trip_gpx, user_data, trip, footprints, args.elevation)
+                build_trip_html(trip_dir, trip, footprints)
 
                 old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
                 if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
@@ -99,6 +101,7 @@ def process_profile(profile_id, username, password, args):
             xml_tree.write(output_xml, encoding="utf-8", xml_declaration=True)
 
             print(f"✅ Complete! XML: {output_xml}")
+            build_user_html(output_dir, user_data, trips)
         print(f"✅ User: {user_data['name']}")
         print(f"✅ Trips: {len(trips)}")
 
@@ -121,10 +124,22 @@ def scrapper(args):
     @return None
     """
     # Parse profile triplets (id, username, password)
-    profiles = args.profile if args.profile else []
-    
+    profiles = list(args.profile or [])
+
+    # Profiles from the credentials file: selected by name, or all when no name is given
+    if args.profile_name or not profiles:
+        with open(args.credentials, encoding="utf-8") as f:
+            known = json.load(f)
+        names = args.profile_name or list(known)
+        for name in names:
+            if name not in known:
+                print(f"ERROR: Unknown profile name '{name}' in {args.credentials}")
+                return
+            entry = known[name]
+            profiles.append((entry["id"], entry["username"], entry.get("password", "")))
+
     if not profiles:
-        print("ERROR: At least one --profile is required (format: --profile id username password)")
+        print("ERROR: No profile given (use --profile, --profile-name or a credentials file)")
         return
     
     # Process each profile, collecting results for merged XML
@@ -151,6 +166,7 @@ def scrapper(args):
         os.makedirs(args.output, exist_ok=True)
         merged_tree.write(merged_xml, encoding="utf-8", xml_declaration=True)
         print(f"✅ Merged XML: {merged_xml}")
+        build_global_html(args.output, collected)
 
 # ##############################################################################################
 # __main__
@@ -163,8 +179,12 @@ if __name__ == "__main__":
                 prog='FindPenguins scrapper',
                 description='Scrap one or more FindPenguins profiles')
 
-    parser.add_argument("--profile", action='append', nargs=3, required=True, metavar=('ID', 'USERNAME', 'PASSWORD'),
+    parser.add_argument("--profile", action='append', nargs=3, metavar=('ID', 'USERNAME', 'PASSWORD'),
                         help="Profile triplet: id username password (can be used multiple times)")
+    parser.add_argument("--credentials", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles.json"),
+                        help="JSON file mapping profile names to {id, username, password}")
+    parser.add_argument("--profile-name", action='append', metavar='NAME',
+                        help="Profile name from the credentials file (can be used multiple times; default: all)")
     parser.add_argument("-o", "--output", default="output", help="Output folder")
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
     parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")

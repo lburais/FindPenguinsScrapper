@@ -7,11 +7,40 @@ dictionaries used by the writer layer.
 
 import os
 import re
+import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from fp_config import BASE_URL, HEADERS
-from fp_utils import clean_text, extract_expandable_text, extract_private_links, download_image, load_page
+from fp_utils import clean_text, extract_expandable_text, extract_private_links, download_image, download_video, load_page, gpx_tag
+
+
+def apply_gpx_coordinates(footprints, gpx_path):
+    """! @brief Overwrite footprint lat/lon with the waypoint coordinates of the downloaded GPX.
+    @param footprints List of footprint dictionaries, modified in place.
+    @param gpx_path Path of the GPX downloaded from FindPenguins.
+    @return None
+    """
+    if not os.path.exists(gpx_path):
+        return
+
+    waypoints = []
+    for wpt in ET.parse(gpx_path).getroot().findall(gpx_tag("wpt")):
+        waypoints.append((clean_text(wpt.findtext(gpx_tag("name")) or ""), wpt.get("lat", ""), wpt.get("lon", "")))
+
+    # Match by title in order, so repeated titles consume successive waypoints.
+    remaining = list(waypoints)
+    unmatched = []
+    for fp in footprints:
+        title = clean_text(fp.get("title", ""))
+        idx = next((i for i, w in enumerate(remaining) if w[0] == title), None)
+        if idx is None:
+            unmatched.append(fp)
+            continue
+        _, fp["lat"], fp["lon"] = remaining.pop(idx)
+
+    if unmatched:
+        print(f"  WARNING: {len(unmatched)} footprint(s) without a matching GPX waypoint")
 
 
 def click_footprint_menu(page):
@@ -398,6 +427,16 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
             except Exception as e:
                 print(f"Photo download failed: {img_url} -> {e}")
 
+        videos = []
+        for anchor in fp.select("a.image.video[data-url]"):
+            video_url = anchor.get("data-url", "")
+            if not video_url:
+                continue
+            try:
+                videos.append(download_video(video_url, photos_dir, prefix=f"{fp_id}_"))
+            except Exception as e:
+                print(f"Video download failed: {video_url} -> {e}")
+
         if popup_data and popup_data.get("weather"):
             weather = popup_data["weather"]
 
@@ -432,6 +471,8 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
                 "park4night": park4night,
                 "wikipedia": wikipedia_links,
                 "photos": photos,
+                "videos": videos,
             }
         )
+    apply_gpx_coordinates(footprints, os.path.join(trip_dir, os.path.basename(trip_dir) + ".gpx"))
     return footprints
