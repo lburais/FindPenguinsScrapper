@@ -15,34 +15,46 @@ from urllib.parse import urljoin
 from fp_config import BASE_URL
 from fp_utils import login, create_browser_page, load_page, download_image
 from fp_parsers import parse_profile, parse_trips, parse_trip
-from fp_writers import build_trip_gpx, build_user_xml, build_merged_xml, build_trip_html, build_user_html, build_global_html
+from fp_writers import (
+    build_trip_gpx,
+    build_user_xml,
+    build_merged_xml,
+    build_trip_html,
+    build_user_html,
+    build_global_html,
+    build_trip_markdown,
+    build_user_markdown,
+)
 
 # ##############################################################################################
-# scrapper
+# process_profile
 # ##############################################################################################
 
 
-def process_profile(profile_id, username, password, args):
+def process_profile(profile_id, username, password, output, trip_slug, elevation, save_html):
     """! @brief Run end-to-end scraping workflow for one profile.
     @param profile_id Profile ID to scrape.
     @param username Username for authentication.
     @param password Password for authentication.
-    @param args Parsed CLI arguments (output options, flags).
-    @return None
+    @param output Root output directory.
+    @param trip_slug Optional slug of the only trip to scrape.
+    @param elevation Whether to adjust track elevations.
+    @param save_html Whether to save downloaded HTML for debugging.
+    @return Tuple containing profile data and its scraped trips.
     @exception RuntimeError Raised when requested single trip slug is not found.
     """
 
     session = login(username, password)
     playwright, browser, page = create_browser_page(session)
 
-    output_dir = os.path.join(args.output, profile_id)
+    output_dir = os.path.join(output, profile_id)
     os.makedirs(output_dir, exist_ok=True)
 
     try:
         # Parse profile
         print(f"Parsing profile [{profile_id}] ...")
 
-        soup = load_page(page, urljoin(BASE_URL, profile_id), output_dir, save_html=args.save_html)
+        soup = load_page(page, urljoin(BASE_URL, profile_id), output_dir, save_html=save_html)
 
         user_data = parse_profile(soup)
         user_data["uid"] = profile_id
@@ -57,10 +69,10 @@ def process_profile(profile_id, username, password, args):
 
         trips = parse_trips(soup, profile_id)
 
-        if args.trip:
-            trips = [trip for trip in trips if trip["slug"] == args.trip]
+        if trip_slug:
+            trips = [trip for trip in trips if trip["slug"] == trip_slug]
             if not trips:
-                raise RuntimeError(f'Trip not found: {args.trip}')
+                raise RuntimeError(f'Trip not found: {trip_slug}')
 
         # Process each trip
         print(f"Fetching {len(trips)} trip(s) ...")
@@ -70,10 +82,10 @@ def process_profile(profile_id, username, password, args):
                 trip_dir = os.path.join(output_dir, trip['slug'])
                 os.makedirs(trip_dir, exist_ok=True)
 
-                soup = load_page(page, trip["url"], trip_dir, save_html=args.save_html)
+                soup = load_page(page, trip["url"], trip_dir, save_html=save_html)
 
                 photos_dir = trip_dir
-                footprints = parse_trip(page, session, soup, trip_dir, photos_dir, save_html=args.save_html)
+                footprints = parse_trip(page, session, soup, trip_dir, photos_dir, save_html=save_html)
                 trip["footprints"] = footprints
                 trip_gpx = os.path.join(output_dir, trip["slug"] + ".gpx")
                 trip["gpx"] = os.path.relpath(trip_gpx, output_dir)
@@ -83,8 +95,7 @@ def process_profile(profile_id, username, password, args):
                 if os.path.exists(downloaded_trip_gpx):
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
 
-                build_trip_gpx(trip_gpx, user_data, trip, footprints, args.elevation)
-                build_trip_html(trip_dir, trip, footprints)
+                build_trip_gpx(trip_gpx, user_data, trip, footprints, elevation)
 
                 old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
                 if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
@@ -101,7 +112,6 @@ def process_profile(profile_id, username, password, args):
             xml_tree.write(output_xml, encoding="utf-8", xml_declaration=True)
 
             print(f"✅ Complete! XML: {output_xml}")
-            build_user_html(output_dir, user_data, trips)
         print(f"✅ User: {user_data['name']}")
         print(f"✅ Trips: {len(trips)}")
 
@@ -117,30 +127,35 @@ def process_profile(profile_id, username, password, args):
 # scrapper
 # ##############################################################################################
 
-
-def scrapper(args):
+def scrapper(profile, profile_name, credentials, output, trip_slug, elevation, save_html):
     """! @brief Run scraping workflow for one or more profiles.
-    @param args Parsed CLI arguments (profiles triplets, output options).
-    @return None
+    @param profile Profile triplets supplied directly on the command line.
+    @param profile_name Optional credential profile names to scrape.
+    @param credentials JSON credentials file path.
+    @param output Root output directory.
+    @param trip_slug Optional slug of the only trip to scrape.
+    @param elevation Whether to adjust track elevations.
+    @param save_html Whether to save downloaded HTML for debugging.
+    @return List of (user_data, trips) tuples for successfully scraped profiles.
     """
     # Parse profile triplets (id, username, password)
-    profiles = list(args.profile or [])
+    profiles = list(profile or [])
 
     # Profiles from the credentials file: selected by name, or all when no name is given
-    if args.profile_name or not profiles:
-        with open(args.credentials, encoding="utf-8") as f:
+    if profile_name or not profiles:
+        with open(credentials, encoding="utf-8") as f:
             known = json.load(f)
-        names = args.profile_name or list(known)
+        names = profile_name or list(known)
         for name in names:
             if name not in known:
-                print(f"ERROR: Unknown profile name '{name}' in {args.credentials}")
-                return
+                print(f"ERROR: Unknown profile name '{name}' in {credentials}")
+                return []
             entry = known[name]
             profiles.append((entry["id"], entry["username"], entry.get("password", "")))
 
     if not profiles:
         print("ERROR: No profile given (use --profile, --profile-name or a credentials file)")
-        return
+        return []
     
     # Process each profile, collecting results for merged XML
     collected = []
@@ -150,7 +165,15 @@ def scrapper(args):
         print(f"{'='*60}\n")
         
         try:
-            result = process_profile(profile_id, username, password, args)
+            result = process_profile(
+                profile_id,
+                username,
+                password,
+                output,
+                trip_slug,
+                elevation,
+                save_html,
+            )
             if result is not None:
                 collected.append(result)
         except Exception as e:
@@ -162,11 +185,63 @@ def scrapper(args):
         print("Building merged XML for all profiles...")
         print(f"{'='*60}\n")
         merged_tree = build_merged_xml(collected)
-        merged_xml = os.path.join(args.output, "profiles.xml")
-        os.makedirs(args.output, exist_ok=True)
+        merged_xml = os.path.join(output, "profiles.xml")
+        os.makedirs(output, exist_ok=True)
         merged_tree.write(merged_xml, encoding="utf-8", xml_declaration=True)
         print(f"✅ Merged XML: {merged_xml}")
-        build_global_html(args.output, collected)
+    return collected
+
+
+# ##############################################################################################
+# generate_html_outputs
+# ##############################################################################################
+
+def generate_html_outputs(output, profiles_data):
+    """! @brief Generate HTML outputs after all scraping completes.
+    @param output Root output directory.
+    @param profiles_data List of (user_data, trips) tuples returned by scrapper.
+    @return None
+    """
+
+    if not profiles_data:
+        return
+
+    print("\nGenerating HTML output(s)...")
+    for user_data, trips in profiles_data:
+        output_dir = os.path.join(output, user_data["uid"])
+        for trip in trips:
+            trip_dir = os.path.join(output_dir, trip["slug"])
+            footprints = trip.get("footprints", [])
+            build_trip_html(trip_dir, trip, footprints)
+
+        build_user_html(output_dir, user_data, trips)
+
+    if len(profiles_data) > 1:
+        build_global_html(output, profiles_data)
+
+
+# ##############################################################################################
+# generate_markdown_outputs
+# ##############################################################################################
+
+def generate_markdown_outputs(content_dir, output, profiles_data):
+    """! @brief Generate Pelican-compatible Markdown outputs after scraping completes.
+    @param content_dir Pelican pages source directory.
+    @param output Root directory containing scraped profile assets.
+    @param profiles_data List of (user_data, trips) tuples returned by scrapper.
+    @return None
+    """
+
+    if not profiles_data:
+        return
+    print("\nGenerating Markdown output(s)...")
+    for user_data, trips in profiles_data:
+        profile_dir = os.path.join(output, user_data["uid"])
+        for trip in trips:
+            trip_dir = os.path.join(profile_dir, trip["slug"])
+            build_trip_markdown(content_dir, trip_dir, user_data, trip, trip.get("footprints", []))
+
+        build_user_markdown(content_dir, profile_dir, user_data, trips)
 
 # ##############################################################################################
 # __main__
@@ -189,7 +264,21 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
     parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
+    parser.add_argument("--html", action="store_true", help="Generate HTML travel book pages")
+    parser.add_argument("--md", metavar="PATH", help="Generate Pelican Markdown pages under PATH")
 
     arguments = parser.parse_args()
 
-    scrapper(arguments)
+    profiles_data = scrapper(
+        arguments.profile,
+        arguments.profile_name,
+        arguments.credentials,
+        arguments.output,
+        arguments.trip,
+        arguments.elevation,
+        arguments.save_html,
+    )
+    if arguments.html:
+        generate_html_outputs(arguments.output, profiles_data)
+    if arguments.md:
+        generate_markdown_outputs(arguments.md, arguments.output, profiles_data)

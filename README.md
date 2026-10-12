@@ -2,7 +2,7 @@
 
 Un outil puissant en Python permettant d'extraire, sauvegarder et archiver localement l'intégralité des données de profils **FindPenguins** (publics ou privés). 
 
-Ce script orchestre l'authentification, le scraping des données dynamiques (textes, météo, coordonnées, overnights) et télécharge localement l'ensemble des médias (photos et vidéos). Il génère à la fois des structures d'archivage standards (**GPX**, **XML**) et un rendu visuel sous forme de **Livre de Voyage numérique (HTML)** interactif et autonome.
+Ce script orchestre l'authentification, le scraping des données dynamiques (textes, météo, coordonnées, overnights) et télécharge localement l'ensemble des médias (photos et vidéos). Il génère à la fois des structures d'archivage standards (**GPX**, **XML**), un rendu visuel sous forme de **Livre de Voyage numérique (HTML)** interactif et autonome, et des sources **Markdown compatibles Pelican**.
 
 ---
 
@@ -18,6 +18,10 @@ Ce script orchestre l'authentification, le scraping des données dynamiques (tex
   - Génération de pages HTML locales adoptant le style épuré et élégant des *Travel Books* imprimés de FindPenguins.
   - Intégration de cartes géographiques interactives **Leaflet** (basées sur OpenStreetMap) lisibles entièrement hors-ligne.
   - Lecteurs vidéo HTML5 natifs intégrés directement dans le fil des récits.
+- **Export Pelican (Markdown) :**
+  - Génération d'une page de profil, d'une page par voyage et d'un article par *footprint*.
+  - Métadonnées `Title`, `Slug`, `Date`, `Category`, `Tags` et `Summary` reconnues par Pelican.
+  - Liens internes Pelican (`{filename}`) entre les profils, voyages et étapes.
 
 ---
 
@@ -91,6 +95,11 @@ python findpenguins_scrapper.py --profile-name MonVoyageur
 - `-t`, `--trip` : Isoler et parser uniquement un voyage spécifique via son slug d'URL.
 - `--elevation` : Activer la correction et l'enrichissement des données d'altitude sur les tracés GPX.
 - `--save-html` : Conserver les captures HTML brutes téléchargées à des fins de débogage.
+- `--html` : Générer les pages HTML du livre de voyage.
+- `--md PATH` : Générer les pages Markdown compatibles avec Pelican sous `PATH`.
+
+Les options `--html` et `--md PATH` peuvent être utilisées séparément ou ensemble.
+Sans l'une de ces options, seuls les exports GPX et XML sont générés.
 
 ---
 
@@ -100,16 +109,26 @@ Une fois le scraping terminé, le dossier de sortie est structuré de manière �
 
 ```text
 output/
-└── pseudo_findpenguins/
-    ├── pseudo_findpenguins.xml # Index XML complet du profil
-    ├── index.html              # Page d'accueil du profil (Style étagère de livres)
-    ├── voyage-islande.gpx      # Fichier GPX du parcours avec waypoints enrichis
-    └── voyage-islande/         # Livre numérique dédié au voyage
-        ├── index.html          # Sommaire chronologique et carte globale du voyage
-        ├── etape_1.html        # Récit, carteLeaflet et photos de l'étape 1
-        ├── etape_2.html        
-        ├── img_12345_pic.jpg   # Photos téléchargées localement
-        └── vid_67890_mov.mp4   # Vidéos téléchargées localement
+├── pseudo_findpenguins/
+│   ├── pseudo_findpenguins.xml # Index XML complet du profil
+│   ├── index.html              # Page d'accueil du profil (Style étagère de livres)
+│   ├── voyage-islande.gpx      # Fichier GPX du parcours avec waypoints enrichis
+│   └── voyage-islande/         # Livre numérique dédié au voyage
+│       ├── index.html          # Sommaire chronologique et carte globale du voyage
+│       ├── etape_1.html        # Récit, carte Leaflet et photos de l'étape 1
+│       ├── etape_2.html
+│       ├── img_12345_pic.jpg   # Photos téléchargées localement
+│       └── vid_67890_mov.mp4   # Vidéos téléchargées localement
+└── content/
+    └── pages/                  # Sources Markdown Pelican (option --md)
+        └── pseudo_findpenguins/
+            ├── user.md
+            └── voyage-islande/
+                ├── trip.md
+                └── footprint_1/
+                    ├── footprint.md
+                    ├── img_12345_pic.jpg
+                    └── vid_67890_mov.mp4
 ```
 
 ---
