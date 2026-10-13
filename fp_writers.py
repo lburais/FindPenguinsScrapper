@@ -16,7 +16,7 @@ from math import radians, sin, cos, sqrt, atan2
 
 from fp_config import GPX_NS, XSI_NS
 from fp_utils import gpx_tag, add_text_element, format_tree
-from elevation import fetch_elevations
+from fp_elevation import fetch_elevations
 
 
 def distance_meters(lat1, lon1, lat2, lon2):
@@ -372,6 +372,13 @@ def _write_markdown(path, content):
         f.write(content)
 
 
+def _write_rst(path, content):
+    """! @brief Write a reStructuredText document, creating parent folders."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
 def _pelican_metadata(**fields):
     """! @brief Format Pelican's Markdown metadata header."""
     return "\n".join(
@@ -628,6 +635,198 @@ def build_user_markdown(content_dir, profile_dir, user_data, trips):
         )
     content.append("")
     _write_markdown(os.path.join(markdown_user_dir, "user.md"), "\n".join(content))
+
+
+def _rst_text(value):
+    """! @brief Escape plain text for reStructuredText."""
+    return re.sub(r"([\\`*_|])", r"\\\1", str(value or ""))
+
+
+def _rst_metadata(**fields):
+    """! @brief Format Pelican metadata as a reStructuredText field list."""
+    return "\n".join(
+        f":{name}: {' '.join(str(value or '').split())}"
+        for name, value in fields.items()
+        if value not in (None, "")
+    )
+
+
+def _rst_heading(text, underline="="):
+    """! @brief Format a reStructuredText section heading."""
+    title = _rst_text(text)
+    return f"{title}\n{underline * max(len(title), 1)}"
+
+
+def _text_with_rst_references(text, references):
+    """! @brief Replace reference labels case-insensitively with RST links."""
+    text = str(text or "")
+    references_by_search = _references_by_search(references)
+    if not references_by_search:
+        return _rst_text(text)
+
+    labels = [
+        label
+        for label, _ in sorted(
+            references_by_search.values(), key=lambda item: len(item[0]), reverse=True
+        )
+    ]
+    pattern = re.compile(
+        "|".join(re.escape(label) for label in labels), flags=re.IGNORECASE
+    )
+    parts = []
+    last_end = 0
+    for match in pattern.finditer(text):
+        parts.append(_rst_text(text[last_end:match.start()]))
+        search_text, url = references_by_search[match.group(0).casefold()]
+        escaped_url = url.replace(">", "%3E")
+        parts.append(f"`{_rst_text(search_text)} <{escaped_url}>`_")
+        last_end = match.end()
+    parts.append(_rst_text(text[last_end:]))
+    return "".join(parts)
+
+
+def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
+    """! @brief Build Pelican-compatible reStructuredText for a trip and footprints."""
+    uid = str(user_data.get("uid", "")).strip()
+    trip_slug = str(trip.get("slug", "")).strip()
+    trip_title = str(trip.get("title") or trip_slug).strip()
+    rst_trip_dir = os.path.join(content_dir, uid, trip_slug)
+    source_trip_path = f"pages/{uid}/{trip_slug}"
+    print(f"  - Building trip reStructuredText [{rst_trip_dir}]...")
+
+    chapters = [
+        _rst_metadata(
+            Title=trip_title,
+            Slug=f"{uid}-{trip_slug}",
+            Category="Trips",
+            Tags="findpenguins, travel",
+            Summary=trip.get("period", ""),
+            Template="findpenguins_trip",
+        ),
+        "",
+        _rst_heading(trip_title),
+        "",
+    ]
+    for label, value in (
+        ("Period", trip.get("period")),
+        ("Duration", trip.get("days")),
+        ("Distance", trip.get("km")),
+    ):
+        if value:
+            chapters.extend([f"**{label}:** {_rst_text(value)}", ""])
+
+    chapters.extend([_rst_heading("Footprints", "-"), ""])
+    for index, footprint in enumerate(footprints, start=1):
+        title = str(footprint.get("title") or f"Étape {index}").strip()
+        url = f"{{filename}}/{source_trip_path}/footprint_{index}/footprint.rst"
+        chapters.append(f"* `{_rst_text(title)} <{url}>`_")
+    chapters.append("")
+    _write_rst(os.path.join(rst_trip_dir, "trip.rst"), "\n".join(chapters))
+
+    for index, footprint in enumerate(footprints, start=1):
+        footprint_dir = os.path.join(rst_trip_dir, f"footprint_{index}")
+        title = str(footprint.get("title") or f"Étape {index}").strip()
+        city = str(footprint.get("city", "")).strip()
+        country = str(footprint.get("country", "")).strip()
+        location = ", ".join(part for part in (city, country) if part)
+        content = [
+            _rst_metadata(
+                Title=title,
+                Date=footprint.get("date", ""),
+                Slug=f"{uid}-{trip_slug}-etape-{index}",
+                Category=trip_title,
+                Tags=", ".join(part for part in ("findpenguins", city, country) if part),
+                Summary=location or footprint.get("weather", ""),
+                Template="findpenguins_footprint",
+            ),
+            "",
+            _rst_heading(title),
+            "",
+        ]
+
+        details = [
+            ("Location", location),
+            ("Weather", footprint.get("weather")),
+            ("Temperature", footprint.get("temperature")),
+            ("Altitude", f"{footprint['altitude']} m" if footprint.get("altitude") else ""),
+            ("Overnights", footprint.get("overnights")),
+        ]
+        lat = str(footprint.get("lat", "")).strip()
+        lon = str(footprint.get("lon", "")).strip()
+        if lat and lon:
+            map_url = f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}"
+            details.append(("Coordinates", f"`{lat}, {lon} <{map_url}>`_"))
+        for label, value in details:
+            if value:
+                content.extend([f"**{label}:** {_rst_text(value)}", ""])
+
+        text = str(footprint.get("text", "")).strip()
+        if text:
+            content.extend(
+                [_text_with_rst_references(text, footprint.get("references", [])), ""]
+            )
+
+        photos = footprint.get("photos", [])
+        if photos:
+            content.extend([_rst_heading("Photos", "-"), ""])
+            for photo in _copy_media(photos, footprint_dir):
+                content.extend([".. image:: " + photo, "   :alt: Photo", ""])
+
+        videos = footprint.get("videos", [])
+        if videos:
+            content.extend([_rst_heading("Videos", "-"), ""])
+            copied_videos = _copy_media(videos, footprint_dir)
+            content.extend([".. raw:: html", ""])
+            content.extend(
+                f"   <video controls preload=\"metadata\" src=\"{html.escape(video, quote=True)}\"></video>"
+                for video in copied_videos
+            )
+            content.append("")
+
+        back_url = f"{{filename}}/{source_trip_path}/trip.rst"
+        content.extend([f"`Back to {_rst_text(trip_title)} <{back_url}>`_", ""])
+        _write_rst(os.path.join(footprint_dir, "footprint.rst"), "\n".join(content))
+
+
+def build_user_rst(content_dir, profile_dir, user_data, trips):
+    """! @brief Build a Pelican-compatible reStructuredText user landing page."""
+    uid = str(user_data.get("uid", "")).strip()
+    name = str(user_data.get("name") or uid).strip()
+    rst_user_dir = os.path.join(content_dir, uid)
+    print(f"  - Building user reStructuredText [{rst_user_dir}]...")
+
+    content = [
+        _rst_metadata(Title=name, Slug=uid, Template="findpenguins_user"),
+        "",
+        _rst_heading(name),
+        "",
+    ]
+    if user_data.get("picture"):
+        picture_path = str(user_data["picture"])
+        if not picture_path.startswith(("http://", "https://")):
+            picture_path = os.path.join(profile_dir, picture_path)
+            picture_path = _copy_media([picture_path], rst_user_dir)[0]
+        content.extend([".. image:: " + picture_path, f"   :alt: {_rst_text(name)}", ""])
+    if user_data.get("location"):
+        content.extend([f"**Location:** {_rst_text(user_data['location'])}", ""])
+    if user_data.get("website"):
+        website = str(user_data["website"]).strip()
+        content.extend([f"`{_rst_text(website)} <{website}>`_", ""])
+    if user_data.get("bio"):
+        content.extend([_rst_text(user_data["bio"]).strip(), ""])
+
+    content.extend([_rst_heading("Trips", "-"), ""])
+    for trip in trips:
+        slug = str(trip.get("slug", "")).strip()
+        if not slug:
+            continue
+        title = str(trip.get("title") or slug).strip()
+        period = str(trip.get("period", "")).strip()
+        trip_url = f"{{filename}}/pages/{uid}/{slug}/trip.rst"
+        link = f"`{_rst_text(title)} <{trip_url}>`_"
+        content.append(f"* {link}" + (f" — {_rst_text(period)}" if period else ""))
+    content.append("")
+    _write_rst(os.path.join(rst_user_dir, "user.rst"), "\n".join(content))
 
 
 def build_trip_html(trip_dir, trip, footprints):

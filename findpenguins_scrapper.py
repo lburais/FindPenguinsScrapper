@@ -24,6 +24,8 @@ from fp_writers import (
     build_global_html,
     build_trip_markdown,
     build_user_markdown,
+    build_trip_rst,
+    build_user_rst,
 )
 
 # ##############################################################################################
@@ -246,6 +248,26 @@ def generate_markdown_outputs(content_dir, output, profiles_data):
 
         build_user_markdown(content_dir, profile_dir, user_data, trips)
 
+
+def generate_rst_outputs(content_dir, output, profiles_data):
+    """! @brief Generate Pelican-compatible reStructuredText after scraping.
+    @param content_dir Pelican pages source directory.
+    @param output Root directory containing scraped profile assets.
+    @param profiles_data List of (user_data, trips) tuples returned by scrapper.
+    @return None
+    """
+    if not profiles_data:
+        return
+    print("\nGenerating reStructuredText output(s)...")
+    for user_data, trips in profiles_data:
+        profile_dir = os.path.join(output, user_data["uid"])
+        for trip in trips:
+            trip_dir = os.path.join(profile_dir, trip["slug"])
+            build_trip_rst(content_dir, trip_dir, user_data, trip, trip.get("footprints", []))
+
+        build_user_rst(content_dir, profile_dir, user_data, trips)
+
+
 # ##############################################################################################
 # __main__
 # ##############################################################################################
@@ -275,6 +297,7 @@ if __name__ == "__main__":
         help="Generate HTML travel book pages under PATH (default: --output)",
     )
     parser.add_argument("--md", metavar="PATH", help="Generate Pelican Markdown pages under PATH")
+    parser.add_argument("--rst", metavar="PATH", help="Generate Pelican reStructuredText pages under PATH")
 
     arguments = parser.parse_args()
 
@@ -291,3 +314,5 @@ if __name__ == "__main__":
         generate_html_outputs(arguments.output, profiles_data, arguments.html)
     if arguments.md:
         generate_markdown_outputs(arguments.md, arguments.output, profiles_data)
+    if arguments.rst:
+        generate_rst_outputs(arguments.rst, arguments.output, profiles_data)
