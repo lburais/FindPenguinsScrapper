@@ -95,10 +95,11 @@ python findpenguins_scrapper.py --profile-name MonVoyageur
 - `-t`, `--trip` : Isoler et parser uniquement un voyage spécifique via son slug d'URL.
 - `--elevation` : Activer la correction et l'enrichissement des données d'altitude sur les tracés GPX.
 - `--save-html` : Conserver les captures HTML brutes téléchargées à des fins de débogage.
-- `--html` : Générer les pages HTML du livre de voyage.
+- `--html [PATH]` : Générer les pages HTML du livre de voyage sous `PATH` (par défaut, le dossier `--output`).
 - `--md PATH` : Générer les pages Markdown compatibles avec Pelican sous `PATH`.
 
-Les options `--html` et `--md PATH` peuvent être utilisées séparément ou ensemble.
+Les options `--html [PATH]` et `--md PATH` peuvent être utilisées séparément ou ensemble.
+Les médias HTML continuent de pointer vers les fichiers téléchargés sous `--output`.
 Sans l'une de ces options, seuls les exports GPX et XML sont générés.
 
 ---

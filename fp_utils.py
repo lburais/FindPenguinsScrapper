@@ -62,40 +62,48 @@ def clean_text(t):
     return re.sub(r"\s+", " ", (t or "")).strip()
 
 
-def extract_private_links(text):
-    """! @brief Extract Park4Night and Wikipedia URLs from private text notes.
+def extract_private_references(text):
+    """! @brief Extract URL references from private text notes.
     @param text Raw note text that may include URLs.
-    @return Tuple (cleaned_text, park4night_url, wikipedia_urls).
+    @return Tuple (cleaned_text, list of (search_text, url) references).
     """
     if not text:
-        return "", "", []
+        return "", []
 
-    url_pattern = re.compile(r"https?://[^\s]+", flags=re.IGNORECASE)
-    park4night_url = ""
-    wikipedia_urls = []
+    references = []
+    text_lines = []
+    for line in text.splitlines():
+        line_text = line.strip()
+        search_text = ""
+        url = line_text
+        if line_text.startswith("[") and "]" in line_text:
+            search_end = line_text.index("]")
+            search_text = line_text[1:search_end].strip()
+            url = line_text[search_end + 1:].strip()
 
-    def _replace(match):
-        nonlocal park4night_url
-        url = match.group(0)
-        lowered = url.lower()
+        try:
+            parsed_url = urlparse(url)
+            valid_url = (
+                parsed_url.scheme.lower() in ("http", "https")
+                and bool(parsed_url.hostname)
+                and not any(char.isspace() for char in url)
+            )
+            parsed_url.port
+        except ValueError:
+            valid_url = False
 
-        if "park4night" in lowered:
-            if not park4night_url:
-                park4night_url = url
-            return ""
+        if valid_url:
+            reference = search_text, url
+            if reference not in references:
+                references.append(reference)
+        else:
+            text_lines.append(line)
 
-        if "wikipedia.org" in lowered:
-            if url not in wikipedia_urls:
-                wikipedia_urls.append(url)
-            return ""
-
-        return url
-
-    cleaned = url_pattern.sub(_replace, text)
+    cleaned = "\n".join(text_lines)
     cleaned = re.sub(r"[ \t]+", " ", cleaned)
     cleaned = re.sub(r" *\n *", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-    return cleaned, park4night_url, wikipedia_urls
+    return cleaned, references
 
 
 def extract_expandable_text(node):

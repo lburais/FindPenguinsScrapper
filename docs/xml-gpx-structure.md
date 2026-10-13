@@ -98,8 +98,7 @@ Waypoint extensions (`<wpt><extensions>`) may include:
 - `<country>`
 - `<city>`
 - `<text-private>`
-- `<park4night>`
-- repeated `<wikipedia>`
+- repeated `<reference>` elements, each containing an optional `<search>` and a `<url>`
 - repeated `<photo>` with local file path
 - `<point lat="..." lon="..."/>` (nearest route point, custom extension)
 
@@ -127,7 +126,7 @@ This ordering keeps narrative waypoints clearly visible while preserving route g
 - Repeated fields:
   - XML: `<trip><companion>`
   - GPX metadata extensions: `<companion>`
-  - GPX waypoint extensions: `<wikipedia>`, `<photo>`
+  - GPX waypoint extensions: `<reference>`, `<photo>`, `<video>`
 
 ## 5) Compatibility Notes
 

@@ -12,7 +12,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from fp_config import BASE_URL, HEADERS
-from fp_utils import clean_text, extract_expandable_text, extract_private_links, download_image, download_video, load_page, gpx_tag
+from fp_utils import clean_text, extract_expandable_text, extract_private_references, download_image, download_video, load_page, gpx_tag
 
 
 def apply_gpx_coordinates(footprints, gpx_path):
@@ -412,7 +412,7 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
 
         text_private_el = fp.select_one(".content-container .text-private")
         text_private = extract_expandable_text(text_private_el)
-        text_private, park4night, wikipedia_links = extract_private_links(text_private)
+        text_private, references = extract_private_references(text_private)
 
         photos = []
         for anchor in fp.select("a.image.photo[data-url]"):
@@ -468,8 +468,7 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
                 "lon": lon,
                 "text": text,
                 "text-private": text_private,
-                "park4night": park4night,
-                "wikipedia": wikipedia_links,
+                "references": references,
                 "photos": photos,
                 "videos": videos,
             }

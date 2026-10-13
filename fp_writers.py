@@ -8,9 +8,10 @@ metadata extensions, waypoint ordering, and indentation style.
 import os
 import html
 import json
+import re
 import shutil
 import xml.etree.ElementTree as ET
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse
 from math import radians, sin, cos, sqrt, atan2
 
 from fp_config import GPX_NS, XSI_NS
@@ -92,18 +93,18 @@ def footprint_to_waypoint(footprint):
         "country": footprint.get("country", ""),
         "city": footprint.get("city", ""),
         "text-private": footprint.get("text-private", ""),
-        "park4night": footprint.get("park4night", ""),
     }
 
-    if any(value for value in extensions_data.values()) or footprint.get("wikipedia") or footprint.get("photos") or footprint.get("videos"):
+    if any(value for value in extensions_data.values()) or footprint.get("references") or footprint.get("photos") or footprint.get("videos"):
         extensions = ET.SubElement(waypoint, gpx_tag("extensions"))
 
         for key, value in extensions_data.items():
             add_text_element(extensions, key, value, namespace=None)
 
-        if footprint.get("wikipedia"):
-            for wiki in footprint.get("wikipedia", []):
-                add_text_element(extensions, "wikipedia", wiki, namespace=None)
+        for search_text, url in footprint.get("references", []):
+            reference = ET.SubElement(extensions, "reference")
+            add_text_element(reference, "search", search_text, namespace=None)
+            add_text_element(reference, "url", url, namespace=None)
 
         if footprint.get("photos"):
             for photo in footprint.get("photos", []):
@@ -385,6 +386,74 @@ def _markdown_text(value):
     return str(value or "").replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
+def _references_by_search(references):
+    """! @brief Return case-insensitive search text keys mapped to labels and URLs."""
+    result = {}
+    for search_text, url in references:
+        search_text = str(search_text or "")
+        url = str(url or "").strip()
+        if search_text and url.lower().startswith(("http://", "https://")):
+            result.setdefault(search_text.casefold(), (search_text, url))
+    return result
+
+
+def _text_with_markdown_references(text, references):
+    """! @brief Replace reference search text occurrences with Markdown links."""
+    text = str(text or "")
+    references_by_search = _references_by_search(references)
+    if not references_by_search:
+        return text
+
+    labels = [
+        label
+        for label, _ in sorted(
+            references_by_search.values(), key=lambda item: len(item[0]), reverse=True
+        )
+    ]
+    pattern = re.compile(
+        "|".join(re.escape(label) for label in labels), flags=re.IGNORECASE
+    )
+    return pattern.sub(
+        lambda match: _markdown_reference_link(
+            *references_by_search[match.group(0).casefold()]
+        ),
+        text,
+    )
+
+
+def _markdown_reference_link(search_text, url):
+    """! @brief Format one Markdown link using the reference search text."""
+    return f"[{_markdown_text(search_text)}](<{url.replace('>', '%3E')}>)"
+
+
+def _text_with_html_references(text, references):
+    """! @brief Replace reference search text occurrences with HTML links."""
+    text = str(text or "")
+    references_by_search = _references_by_search(references)
+    if not references_by_search:
+        return _esc(text)
+
+    labels = [
+        label
+        for label, _ in sorted(
+            references_by_search.values(), key=lambda item: len(item[0]), reverse=True
+        )
+    ]
+    pattern = re.compile(
+        "|".join(re.escape(label) for label in labels), flags=re.IGNORECASE
+    )
+    parts = []
+    last_end = 0
+    for match in pattern.finditer(text):
+        parts.append(_esc(text[last_end:match.start()]))
+        search_text, reference_url = references_by_search[match.group(0).casefold()]
+        url = html.escape(reference_url, quote=True)
+        parts.append(f'<a href="{url}" target="_blank" rel="noopener">{_esc(search_text)}</a>')
+        last_end = match.end()
+    parts.append(_esc(text[last_end:]))
+    return "".join(parts)
+
+
 def _copy_media(media_paths, destination_dir):
     """! @brief Copy media into a Markdown document folder and return relative paths."""
     os.makedirs(destination_dir, exist_ok=True)
@@ -482,23 +551,9 @@ def build_trip_markdown(content_dir, trip_dir, user_data, trip, footprints):
             content.append("")
 
         text = str(footprint.get("text", "")).strip()
+        references = footprint.get("references", [])
         if text:
-            content.extend([text, ""])
-
-        park4night_url = str(footprint.get("park4night", "")).strip()
-        wikipedia_urls = [
-            str(url).strip()
-            for url in footprint.get("wikipedia", [])
-            if str(url).strip().startswith(("http://", "https://"))
-        ]
-        if park4night_url.startswith(("http://", "https://")) or wikipedia_urls:
-            content.extend(["## Links", ""])
-            if park4night_url.startswith(("http://", "https://")):
-                content.append(f"- [park4night]({park4night_url})")
-            for wikipedia_url in wikipedia_urls:
-                wiki_name = unquote(urlparse(wikipedia_url).path.rsplit("/", 1)[-1]).replace("_", " ")
-                content.append(f"- [Wikipedia: {_markdown_text(wiki_name or wikipedia_url)}]({wikipedia_url})")
-            content.append("")
+            content.extend([_text_with_markdown_references(text, references), ""])
 
         photos = footprint.get("photos", [])
         if photos:
@@ -670,17 +725,6 @@ def build_trip_html(trip_dir, trip, footprints):
         if altitude:
             badges += f'<div class="badge">⛰️ {altitude} m</div>'
 
-        link_badges = ""
-        park4night_url = str(fp.get("park4night", "")).strip()
-        if park4night_url.startswith(("http://", "https://")):
-            link_badges += f'<a class="badge" href="{html.escape(park4night_url, quote=True)}" target="_blank" rel="noopener">🅿️ park4night</a>'
-        for wiki_url in fp.get("wikipedia", []):
-            wiki_url = str(wiki_url).strip()
-            if not wiki_url.startswith(("http://", "https://")):
-                continue
-            wiki_name = unquote(urlparse(wiki_url).path.rsplit("/", 1)[-1]).replace("_", " ")
-            link_badges += f'<a class="badge" href="{html.escape(wiki_url, quote=True)}" target="_blank" rel="noopener">📖 Wikipedia{" · " + _esc(wiki_name) if wiki_name else ""}</a>'
-
         step_html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -695,11 +739,9 @@ def build_trip_html(trip_dir, trip, footprints):
             <div class="step-number" style="margin-top:30px;">Étape {i + 1}</div>
             <h1 style="margin-top:5px; margin-bottom:10px;">{title}</h1>
             <div class="meta-badge-container">{badges}</div>
-            {'<div class="meta-badge-container">' + link_badges + '</div>' if link_badges else ""}
         </header>
         {map_div_html}
-        <div class="story-text">{_esc(fp.get("text", ""))}</div>
-        {'<div class="meta-badge-container">' + link_badges + '</div>' if link_badges else ""}
+        <div class="story-text">{_text_with_html_references(fp.get("text", ""), fp.get("references", []))}</div>
         <div class="photo-grid">{photo_html}</div>
     </div>
 </body>
@@ -734,11 +776,12 @@ document.addEventListener("DOMContentLoaded", function() {{
     _write_html(os.path.join(trip_dir, "index.html"), index_html)
 
 
-def build_user_html(output_dir, user_data, trips):
+def build_user_html(output_dir, user_data, trips, asset_dir=None):
     """! @brief Build the user landing page listing every trip book.
     @param output_dir Profile output folder (trip books live in <output_dir>/<slug>/).
     @param user_data Dictionary of profile-level fields.
     @param trips List of trip dictionaries.
+    @param asset_dir Optional source profile folder for linked assets.
     @return None
     """
 
@@ -746,6 +789,8 @@ def build_user_html(output_dir, user_data, trips):
 
     name = _esc(user_data.get("name") or user_data.get("uid", ""))
     picture = str(user_data.get("picture", "")).strip()
+    if picture and asset_dir:
+        picture = os.path.relpath(os.path.join(asset_dir, picture), output_dir).replace(os.sep, "/")
     avatar = f'<img class="avatar" src="{html.escape(picture, quote=True)}" alt="">' if picture else ""
     bio = _esc(user_data.get("bio", ""))
     location = _esc(user_data.get("location", ""))
@@ -779,10 +824,11 @@ def build_user_html(output_dir, user_data, trips):
     _write_html(os.path.join(output_dir, "index.html"), page)
 
 
-def build_global_html(output_dir, profiles_data):
+def build_global_html(output_dir, profiles_data, assets_dir=None):
     """! @brief Build one landing page listing every profile and its trips.
     @param output_dir Root output folder (profiles live in <output_dir>/<uid>/).
     @param profiles_data List of (user_data, trips) tuples, one per profile.
+    @param assets_dir Optional source root folder for linked profile assets.
     @return None
     """
 
@@ -801,7 +847,13 @@ def build_global_html(output_dir, profiles_data):
         base = html.escape(uid, quote=True)
         name = _esc(user_data.get("name") or uid)
         picture = str(user_data.get("picture", "")).strip()
-        avatar = f'<img class="avatar" src="{base}/{html.escape(picture, quote=True)}" alt=""> ' if picture else ""
+        picture_src = f"{base}/{html.escape(picture, quote=True)}"
+        if picture and assets_dir:
+            picture_src = os.path.relpath(
+                os.path.join(assets_dir, uid, picture), output_dir
+            ).replace(os.sep, "/")
+            picture_src = html.escape(picture_src, quote=True)
+        avatar = f'<img class="avatar" src="{picture_src}" alt=""> ' if picture else ""
         page += f'<h2>{avatar}<a href="{base}/index.html">{name}</a></h2><ul>\n'
         for trip in trips:
             slug = trip.get("slug", "")

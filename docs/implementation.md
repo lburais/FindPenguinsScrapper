@@ -87,9 +87,10 @@ For each trip:
 - Dynamic footprint loading uses repeated click on `#footprintListLoadMore`.
 - Popup metadata (weather, overnights, altitude, places) is parsed from menu modal HTML.
 - Coordinates can come from JavaScript (`initMap(lat,lon)`) and from place coordinate tags.
-- Private text processing extracts special links:
-  - Park4Night URL to dedicated field
-  - Wikipedia links to repeated list
+- Private text processing extracts reference lines in `[search text] URL` or `URL` form.
+  - Only valid HTTP(S) URLs are extracted and stored as `(search text, URL)` pairs; extracted lines are removed from `text-private`.
+  - Invalid or non-HTTP(S) URL lines remain in `text-private`.
+  - Non-empty search text occurrences in the footprint text are rendered as links in HTML and Markdown.
 
 ## GPX Writer Behavior
 

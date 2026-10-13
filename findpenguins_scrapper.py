@@ -196,28 +196,31 @@ def scrapper(profile, profile_name, credentials, output, trip_slug, elevation, s
 # generate_html_outputs
 # ##############################################################################################
 
-def generate_html_outputs(output, profiles_data):
+def generate_html_outputs(output, profiles_data, html_output=None):
     """! @brief Generate HTML outputs after all scraping completes.
     @param output Root output directory.
     @param profiles_data List of (user_data, trips) tuples returned by scrapper.
+    @param html_output Optional root directory for generated HTML pages.
     @return None
     """
 
     if not profiles_data:
         return
 
+    html_output = html_output or output
     print("\nGenerating HTML output(s)...")
     for user_data, trips in profiles_data:
-        output_dir = os.path.join(output, user_data["uid"])
+        output_dir = os.path.join(html_output, user_data["uid"])
+        asset_dir = os.path.join(output, user_data["uid"])
         for trip in trips:
             trip_dir = os.path.join(output_dir, trip["slug"])
             footprints = trip.get("footprints", [])
             build_trip_html(trip_dir, trip, footprints)
 
-        build_user_html(output_dir, user_data, trips)
+        build_user_html(output_dir, user_data, trips, asset_dir=asset_dir)
 
     if len(profiles_data) > 1:
-        build_global_html(output, profiles_data)
+        build_global_html(html_output, profiles_data, assets_dir=output)
 
 
 # ##############################################################################################
@@ -264,7 +267,13 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
     parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
-    parser.add_argument("--html", action="store_true", help="Generate HTML travel book pages")
+    parser.add_argument(
+        "--html",
+        nargs="?",
+        const="",
+        metavar="PATH",
+        help="Generate HTML travel book pages under PATH (default: --output)",
+    )
     parser.add_argument("--md", metavar="PATH", help="Generate Pelican Markdown pages under PATH")
 
     arguments = parser.parse_args()
@@ -278,7 +287,7 @@ if __name__ == "__main__":
         arguments.elevation,
         arguments.save_html,
     )
-    if arguments.html:
-        generate_html_outputs(arguments.output, profiles_data)
+    if arguments.html is not None:
+        generate_html_outputs(arguments.output, profiles_data, arguments.html)
     if arguments.md:
         generate_markdown_outputs(arguments.md, arguments.output, profiles_data)
