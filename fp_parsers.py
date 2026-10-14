@@ -5,6 +5,7 @@ This module converts HTML and popup UI fragments into normalized Python
 dictionaries used by the writer layer.
 """
 
+import datetime
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -41,6 +42,24 @@ def apply_gpx_coordinates(footprints, gpx_path):
 
     if unmatched:
         print(f"  WARNING: {len(unmatched)} footprint(s) without a matching GPX waypoint")
+
+
+def apply_day_numbers(footprints):
+    """! @brief Set `day` on each footprint: days since the first footprint date, first day being 1.
+    @param footprints List of footprint dictionaries, modified in place.
+    @return None
+    """
+    def to_date(value):
+        try:
+            return datetime.date.fromisoformat(str(value or "").strip()[:10])
+        except ValueError:
+            return None
+
+    dates = [to_date(fp.get("date")) for fp in footprints]
+    valid = [d for d in dates if d]
+    first = min(valid) if valid else None
+    for fp, d in zip(footprints, dates):
+        fp["day"] = str((d - first).days + 1) if d else ""
 
 
 def click_footprint_menu(page):
@@ -474,4 +493,5 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
             }
         )
     apply_gpx_coordinates(footprints, os.path.join(trip_dir, os.path.basename(trip_dir) + ".gpx"))
+    apply_day_numbers(footprints)
     return footprints

@@ -93,6 +93,7 @@ Each footprint page is loaded in Playwright and the `li.footprint[data-id=<id>]`
 | `url` | From the list | |
 | `title` | `.title h1.headline a` (fallback `.title h2.headline a`) | |
 | `date` | `.title .date .desc` → `content` attribute | |
+| `day` | Computed by `apply_day_numbers` | Days since the earliest footprint date of the trip, first day = 1. Empty if the date is missing/invalid. |
 | `weather` | Text after `⋅` in `.title .date .desc` | Overridden by the popup value when available. |
 | `lat`, `lon` | Inline script: regex `MapSingleFootprintController.initMap(<lat>,<lon>)` | Then overwritten by the GPX waypoint (see 5.5). |
 | `text` | `.content-container .text:not(.text-private)` | Converted by `extract_expandable_text`. |
@@ -159,7 +160,25 @@ Built in [fp_writers.py](../fp_writers.py) from the data above:
 | Output | Fields |
 |--------|--------|
 | `<profile>.xml` | Profile fields (`uid`, `name`, `bio`, `location`, `website`, `picture`, `email`); per trip `slug`, `title`, `url`, `gpx`, `companion` uids. `period`, `days`, `km`, `is_current` and the companion details are not written. |
-| `<slug>.gpx` | Waypoint: `lat`, `lon`, `name`=title, `desc`=text, `ele`=altitude, `link`=url; extensions `date`, `weather`, `temperature`, `overnights`, `flag`, `country`, `city`, `text-private`, `reference`, `photo`, `video`, `point`. Metadata: trip `title`, `period` (as `desc`, only for a new GPX), author name/email/website, trip link, `uid`, `companion`. |
-| HTML / Markdown / RST | Rendered from the same dictionaries (trip and user pages). |
+| `<slug>.gpx` | Waypoint: `lat`, `lon`, `name`=title, `desc`=text, `ele`=altitude, `link`=url; extensions `date`, `day`, `weather`, `temperature`, `overnights`, `flag`, `country`, `city`, `text-private`, `reference`, `photo`, `video`, `point`. Metadata: trip `title`, `period` (as `desc`, only for a new GPX), author name/email/website, trip link, `uid`, `companion`. |
+| Markdown / RST (Pelican) | Footprint pages: every GPX waypoint field is a Pelican metadata tag, except `desc`, which is the page body (the footprint text, with references turned into links). See below. |
+| HTML | Rendered from the same dictionaries. |
+
+### Pelican footprint metadata (`footprint.rst` / `footprint.md`)
+
+| GPX field | Pelican tag |
+|-----------|-------------|
+| `name` | `Title` |
+| `desc` | **Page body** (not a tag) |
+| `lat`, `lon` | `Lat`, `Lon` |
+| `ele` | `Ele` (altitude) |
+| `link` | `Link` |
+| `date`, `day`, `weather`, `temperature`, `overnights`, `flag`, `country`, `city` | `Date`, `Day`, `Weather`, `Temperature`, `Overnights`, `Flag`, `Country`, `City` |
+| `text-private` | `Text-private` |
+| `reference` | `Reference`: `search|url` entries separated by `, ` |
+| `photo`, `video` | `Photo`, `Video`: copied file names separated by `, ` |
+
+`Slug`, `Category`, `Tags`, `Summary` and `Template` are also set for Pelican itself.
+`time` and `point` are only computed in the GPX and are not part of the pages.
 
 See also [xml-gpx-structure.md](./xml-gpx-structure.md) for the exact XML layout.

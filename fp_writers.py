@@ -86,6 +86,7 @@ def footprint_to_waypoint(footprint):
 
     extensions_data = {
         "date": footprint.get("date", ""),
+        "day": footprint.get("day", ""),
         "weather": footprint.get("weather", ""),
         "temperature": footprint.get("temperature", ""),
         "overnights": footprint.get("overnights", ""),
@@ -472,6 +473,37 @@ def _copy_media(media_paths, destination_dir):
     return copied_paths
 
 
+def _footprint_gpx_fields(footprint, footprint_dir):
+    """! @brief Map a footprint to the GPX waypoint fields used as Pelican metadata.
+    Every GPX field except `desc` (the footprint text, used as page body) is returned.
+    Media are copied into the footprint folder and listed by file name.
+    @param footprint Normalized footprint data.
+    @param footprint_dir Destination folder of the generated page.
+    @return Dictionary of metadata name -> value.
+    """
+    references = ", ".join(
+        f"{search_text}|{url}" if search_text else str(url)
+        for search_text, url in footprint.get("references", [])
+    )
+    return {
+        "Lat": footprint.get("lat", ""),
+        "Lon": footprint.get("lon", ""),
+        "Ele": footprint.get("altitude", ""),
+        "Link": footprint.get("url", ""),
+        "Day": footprint.get("day", ""),
+        "Weather": footprint.get("weather", ""),
+        "Temperature": footprint.get("temperature", ""),
+        "Overnights": footprint.get("overnights", ""),
+        "Flag": footprint.get("flag", ""),
+        "Country": footprint.get("country", ""),
+        "City": footprint.get("city", ""),
+        "Text-private": footprint.get("text-private", ""),
+        "Reference": references,
+        "Photo": ", ".join(_copy_media(footprint.get("photos", []), footprint_dir)),
+        "Video": ", ".join(_copy_media(footprint.get("videos", []), footprint_dir)),
+    }
+
+
 def build_trip_markdown(content_dir, trip_dir, user_data, trip, footprints):
     """! @brief Build Pelican Markdown for a trip and each of its footprints.
     @param content_dir Pelican pages source directory.
@@ -530,61 +562,16 @@ def build_trip_markdown(content_dir, trip_dir, user_data, trip, footprints):
             Tags=", ".join(part for part in ("findpenguins", city, country) if part),
             Summary=location or footprint.get("weather", ""),
             Template="findpenguins_footprint",
+            **_footprint_gpx_fields(footprint, footprint_dir),
         )
+        # Body is the GPX desc only (the footprint text).
+        text = str(footprint.get("text", "")).strip()
         content = [
             footprint_metadata,
             "",
-            f"# {_markdown_text(title)}",
+            _text_with_markdown_references(text, footprint.get("references", [])),
             "",
         ]
-
-        details = []
-        if location:
-            details.append(("Location", location))
-        if footprint.get("weather"):
-            details.append(("Weather", footprint["weather"]))
-        if footprint.get("temperature"):
-            details.append(("Temperature", footprint["temperature"]))
-        if footprint.get("altitude"):
-            details.append(("Altitude", f"{footprint['altitude']} m"))
-        if footprint.get("overnights"):
-            details.append(("Overnights", footprint["overnights"]))
-        lat = str(footprint.get("lat", "")).strip()
-        lon = str(footprint.get("lon", "")).strip()
-        if lat and lon:
-            details.append(("Coordinates", f"[{lat}, {lon}](https://www.openstreetmap.org/?mlat={lat}&mlon={lon})"))
-        if details:
-            content.extend(f"**{label}:** {value}" for label, value in details)
-            content.append("")
-
-        text = str(footprint.get("text", "")).strip()
-        references = footprint.get("references", [])
-        if text:
-            content.extend([_text_with_markdown_references(text, references), ""])
-
-        photos = footprint.get("photos", [])
-        if photos:
-            copied_photos = _copy_media(photos, footprint_dir)
-            content.extend(["## Photos", ""])
-            content.extend(f"![Photo]({photo})" for photo in copied_photos)
-            content.append("")
-
-        videos = footprint.get("videos", [])
-        if videos:
-            copied_videos = _copy_media(videos, footprint_dir)
-            content.extend(["## Videos", ""])
-            content.extend(
-                f'<video controls preload="metadata" src="{html.escape(video, quote=True)}"></video>'
-                for video in copied_videos
-            )
-            content.append("")
-
-        content.extend(
-            [
-                f"[Back to {_markdown_text(trip_title)}]({{filename}}/{source_trip_path}/trip.md)",
-                "",
-            ]
-        )
         _write_markdown(os.path.join(footprint_dir, "footprint.md"), "\n".join(content))
 
 
@@ -729,6 +716,8 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         city = str(footprint.get("city", "")).strip()
         country = str(footprint.get("country", "")).strip()
         location = ", ".join(part for part in (city, country) if part)
+        # Body is the GPX desc only (the footprint text); other GPX fields are metadata.
+        text = str(footprint.get("text", "")).strip()
         content = [
             _rst_metadata(
                 Title=title,
@@ -738,53 +727,12 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
                 Tags=", ".join(part for part in ("findpenguins", city, country) if part),
                 Summary=location or footprint.get("weather", ""),
                 Template="findpenguins_footprint",
+                **_footprint_gpx_fields(footprint, footprint_dir),
             ),
             "",
-            _rst_heading(title),
+            _text_with_rst_references(text, footprint.get("references", [])),
             "",
         ]
-
-        details = [
-            ("Location", location),
-            ("Weather", footprint.get("weather")),
-            ("Temperature", footprint.get("temperature")),
-            ("Altitude", f"{footprint['altitude']} m" if footprint.get("altitude") else ""),
-            ("Overnights", footprint.get("overnights")),
-        ]
-        lat = str(footprint.get("lat", "")).strip()
-        lon = str(footprint.get("lon", "")).strip()
-        if lat and lon:
-            map_url = f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}"
-            details.append(("Coordinates", f"`{lat}, {lon} <{map_url}>`_"))
-        for label, value in details:
-            if value:
-                content.extend([f"**{label}:** {_rst_text(value)}", ""])
-
-        text = str(footprint.get("text", "")).strip()
-        if text:
-            content.extend(
-                [_text_with_rst_references(text, footprint.get("references", [])), ""]
-            )
-
-        photos = footprint.get("photos", [])
-        if photos:
-            content.extend([_rst_heading("Photos", "-"), ""])
-            for photo in _copy_media(photos, footprint_dir):
-                content.extend([".. image:: " + photo, "   :alt: Photo", ""])
-
-        videos = footprint.get("videos", [])
-        if videos:
-            content.extend([_rst_heading("Videos", "-"), ""])
-            copied_videos = _copy_media(videos, footprint_dir)
-            content.extend([".. raw:: html", ""])
-            content.extend(
-                f"   <video controls preload=\"metadata\" src=\"{html.escape(video, quote=True)}\"></video>"
-                for video in copied_videos
-            )
-            content.append("")
-
-        back_url = f"{{filename}}/{source_trip_path}/trip.rst"
-        content.extend([f"`Back to {_rst_text(trip_title)} <{back_url}>`_", ""])
         _write_rst(os.path.join(footprint_dir, "footprint.rst"), "\n".join(content))
 
 
