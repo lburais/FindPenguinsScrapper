@@ -96,7 +96,7 @@ def footprint_to_waypoint(footprint):
         "text-private": footprint.get("text-private", ""),
     }
 
-    if any(value for value in extensions_data.values()) or footprint.get("references") or footprint.get("photos") or footprint.get("videos"):
+    if any(value for value in extensions_data.values()) or footprint.get("references") or footprint.get("photos") or footprint.get("videos") or footprint.get("gpx") or footprint.get("pdf"):
         extensions = ET.SubElement(waypoint, gpx_tag("extensions"))
 
         for key, value in extensions_data.items():
@@ -113,6 +113,12 @@ def footprint_to_waypoint(footprint):
 
         for video in footprint.get("videos", []):
             add_text_element(extensions, "video", video, namespace=None)
+
+        for gpx_file in footprint.get("gpx", []):
+            add_text_element(extensions, "gpx", gpx_file, namespace=None)
+
+        for pdf_file in footprint.get("pdf", []):
+            add_text_element(extensions, "pdf", pdf_file, namespace=None)
 
     return waypoint
 
@@ -473,7 +479,7 @@ def _copy_media(media_paths, destination_dir):
     return copied_paths
 
 
-def _footprint_gpx_fields(footprint, footprint_dir):
+def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
     """! @brief Map a footprint to the GPX waypoint fields used as Pelican metadata.
     Every GPX field except `desc` (the footprint text, used as page body) is returned.
     Media are copied into the footprint folder and listed by file name.
@@ -491,6 +497,7 @@ def _footprint_gpx_fields(footprint, footprint_dir):
         "Ele": footprint.get("altitude", ""),
         "Link": footprint.get("url", ""),
         "Day": footprint.get("day", ""),
+        "Days": trip_days,
         "Weather": footprint.get("weather", ""),
         "Temperature": footprint.get("temperature", ""),
         "Overnights": footprint.get("overnights", ""),
@@ -501,6 +508,8 @@ def _footprint_gpx_fields(footprint, footprint_dir):
         "Reference": references,
         "Photo": ", ".join(_copy_media(footprint.get("photos", []), footprint_dir)),
         "Video": ", ".join(_copy_media(footprint.get("videos", []), footprint_dir)),
+        "Gpx": ", ".join(_copy_media(footprint.get("gpx", []), footprint_dir)),
+        "Pdf": ", ".join(_copy_media(footprint.get("pdf", []), footprint_dir)),
     }
 
 
@@ -562,7 +571,7 @@ def build_trip_markdown(content_dir, trip_dir, user_data, trip, footprints):
             Tags=", ".join(part for part in ("findpenguins", city, country) if part),
             Summary=location or footprint.get("weather", ""),
             Template="findpenguins_footprint",
-            **_footprint_gpx_fields(footprint, footprint_dir),
+            **_footprint_gpx_fields(footprint, footprint_dir, trip.get("days", "")),
         )
         # Body is the GPX desc only (the footprint text).
         text = str(footprint.get("text", "")).strip()
@@ -727,7 +736,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
                 Tags=", ".join(part for part in ("findpenguins", city, country) if part),
                 Summary=location or footprint.get("weather", ""),
                 Template="findpenguins_footprint",
-                **_footprint_gpx_fields(footprint, footprint_dir),
+                **_footprint_gpx_fields(footprint, footprint_dir, trip.get("days", "")),
             ),
             "",
             _text_with_rst_references(text, footprint.get("references", [])),

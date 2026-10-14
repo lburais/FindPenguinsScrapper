@@ -142,6 +142,7 @@ A warning is printed for footprints with no matching waypoint.
 |------|-----------|
 | Photos | `download_image`: `//` and `/` URLs made absolute; thumbnail suffixes `_m_s` / `_t_s` are rewritten to the large `_l` variant; saved as `<trip_dir>/<footprint_id>__<filename>`. A failure is logged and the photo skipped. |
 | Videos | `download_video`: streamed to a `.part` file and renamed when complete; skipped if the file already exists. |
+| GPX / PDF attachments | `download_file`: every link (`href` or `data-url`) in the footprint ending in `.gpx` or `.pdf` is downloaded the same way as videos, into the trip folder, stored in `footprint["gpx"]` / `footprint["pdf"]`. |
 | Profile picture | `download_image` into the profile folder. |
 
 ## 6. Derived data (not scraped)
@@ -177,6 +178,7 @@ Built in [fp_writers.py](../fp_writers.py) from the data above:
 | `text-private` | `Text-private` |
 | `reference` | `Reference`: `search|url` entries separated by `, ` |
 | `photo`, `video` | `Photo`, `Video`: copied file names separated by `, ` |
+| `gpx`, `pdf` | `Gpx`, `Pdf`: copied file names separated by `, ` |
 
 `Slug`, `Category`, `Tags`, `Summary` and `Template` are also set for Pelican itself.
 `time` and `point` are only computed in the GPX and are not part of the pages.

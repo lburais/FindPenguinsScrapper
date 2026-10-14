@@ -254,6 +254,40 @@ def download_video(video_url, dest_folder, prefix="vid"):
     return local_path
 
 
+def download_file(file_url, dest_folder, prefix="file", default_ext=""):
+    """! @brief Download one attachment (GPX, PDF...) and save it to local storage (skipped when already present).
+    @param file_url Remote file URL.
+    @param dest_folder Destination directory path.
+    @param prefix Filename prefix prepended to saved file name.
+    @param default_ext Extension appended when the URL file name has none (e.g. ".pdf").
+    @return Local path of the saved file.
+    @exception requests.RequestException Raised on HTTP failures.
+    """
+
+    os.makedirs(dest_folder, exist_ok=True)
+    if file_url.startswith("//"):
+        file_url = "https:" + file_url
+    elif file_url.startswith("/"):
+        file_url = urljoin(BASE_URL, file_url)
+
+    filename = os.path.basename(urlparse(file_url).path) or f"file{default_ext}"
+    if default_ext and not os.path.splitext(filename)[1]:
+        filename += default_ext
+    local_path = os.path.join(dest_folder, f"{prefix}_{filename}")
+    if os.path.exists(local_path):
+        return local_path
+
+    partial_path = local_path + ".part"
+    with requests.get(file_url, headers=HEADERS, stream=True, timeout=60) as resp:
+        resp.raise_for_status()
+        with open(partial_path, "wb") as f:
+            for chunk in resp.iter_content(1024 * 64):
+                if chunk:
+                    f.write(chunk)
+    os.replace(partial_path, local_path)
+    return local_path
+
+
 def requests_cookies_to_playwright(session):
     """! @brief Convert requests cookies into Playwright cookie objects.
     @param session Authenticated requests session.

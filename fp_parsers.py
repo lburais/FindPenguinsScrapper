@@ -13,7 +13,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from fp_config import BASE_URL, HEADERS
-from fp_utils import clean_text, extract_expandable_text, extract_private_references, download_image, download_video, load_page, gpx_tag
+from fp_utils import clean_text, extract_expandable_text, extract_private_references, download_image, download_video, download_file, load_page, gpx_tag
 
 
 def apply_gpx_coordinates(footprints, gpx_path):
@@ -456,6 +456,22 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
             except Exception as e:
                 print(f"Video download failed: {video_url} -> {e}")
 
+        # Attachments are links to .gpx / .pdf files (href or data-url), anywhere in the footprint.
+        attachments = {"gpx": [], "pdf": []}
+        for anchor in fp.select("a[href], a[data-url]"):
+            for attr in ("data-url", "href"):
+                file_url = anchor.get(attr, "")
+                ext = os.path.splitext(urlparse(file_url).path)[1].lower().lstrip(".")
+                if ext not in attachments:
+                    continue
+                try:
+                    local_path = download_file(file_url, photos_dir, prefix=f"{fp_id}_", default_ext=f".{ext}")
+                    if local_path not in attachments[ext]:
+                        attachments[ext].append(local_path)
+                except Exception as e:
+                    print(f"{ext.upper()} download failed: {file_url} -> {e}")
+                break
+
         if popup_data and popup_data.get("weather"):
             weather = popup_data["weather"]
 
@@ -490,6 +506,8 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
                 "references": references,
                 "photos": photos,
                 "videos": videos,
+                "gpx": attachments["gpx"],
+                "pdf": attachments["pdf"],
             }
         )
     apply_gpx_coordinates(footprints, os.path.join(trip_dir, os.path.basename(trip_dir) + ".gpx"))
