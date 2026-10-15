@@ -32,8 +32,11 @@ Trip entry shape:
     <title>Italy 2026</title>
     <url>https://findpenguins.com/<uid>/trip/<slug></url>
     <gpx>italie-2026.gpx</gpx>
-    <companion>51xfd5fd05zj2</companion>
-    <companion>1zmijwhfvwknl</companion>
+    <companion>
+      <uid>51xfd5fd05zj2</uid>
+      <name>Franklin II</name>
+      <picture>italie-2026/companion_51xfd5fd05zj2_5jcv7mvldlck5_m_s.jpg</picture>
+    </companion>
   </trip>
 </trips>
 ```
@@ -42,9 +45,11 @@ Trip fields intentionally excluded from XML (internal processing only):
 
 - `footprints`
 - `period`
-- `days`
 - `km`
 - `is_current`
+
+`days` (total number of trip days) is written as `<days>` in the trip XML and in the GPX trip
+metadata extensions.
 
 ## 2) GPX Structure
 
@@ -73,7 +78,8 @@ GPX root:
   - `<slug>`
   - `<title>`
   - `<uid>`
-  - repeated `<companion>` for companion ids
+  - `<description>`, `<countries><country><name>/<flag>`, `<distance>` and `<transports><transport><name>/<distance>`
+  - repeated `<companion>` with `<uid>`, `<name>` and `<picture>` sub-elements
 
 ## 2.2 Waypoints (`wpt`)
 

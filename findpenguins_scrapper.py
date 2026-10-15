@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 
 from fp_config import BASE_URL
 from fp_utils import login, create_browser_page, load_page, download_image
-from fp_parsers import parse_profile, parse_trips, parse_trip
+from fp_parsers import parse_profile, parse_trips, parse_trip, parse_trip_insights, parse_trip_image
 from fp_writers import (
     build_trip_gpx,
     build_user_xml,
@@ -86,9 +86,31 @@ def process_profile(profile_id, username, password, output, trip_slug, elevation
 
                 soup = load_page(page, trip["url"], trip_dir, save_html=save_html)
 
+                image_url = parse_trip_image(soup)
+                if image_url:
+                    try:
+                        local_image = download_image(image_url, trip_dir, prefix="cover")
+                        trip["image"] = os.path.relpath(local_image, output_dir)
+                    except Exception as e:
+                        print(f"  WARNING: trip image download failed: {e}")
+
                 photos_dir = trip_dir
                 footprints = parse_trip(page, session, soup, trip_dir, photos_dir, save_html=save_html)
                 trip["footprints"] = footprints
+                insights, insights_companions = parse_trip_insights(
+                    page, trip["url"], trip_dir, save_html=save_html
+                )
+                trip.update(insights)
+                if insights_companions:
+                    for companion in insights_companions:
+                        try:
+                            local_avatar = download_image(
+                                companion["avatar"], trip_dir, prefix=f"companion_{companion['uid']}"
+                            )
+                            companion["picture"] = os.path.relpath(local_avatar, output_dir)
+                        except Exception as e:
+                            print(f"  WARNING: companion picture download failed: {e}")
+                    trip["companions"] = insights_companions
                 trip_gpx = os.path.join(output_dir, trip["slug"] + ".gpx")
                 trip["gpx"] = os.path.relpath(trip_gpx, output_dir)
 

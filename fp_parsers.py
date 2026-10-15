@@ -362,6 +362,109 @@ def parse_footprints(soup):
     return footprints
 
 
+def parse_trip_insights(page, trip_url, trip_dir, save_html=True):
+    """! @brief Extract all details from the Insights subpage of a trip.
+    @param page Active Playwright page.
+    @param trip_url URL of the trip page; insights are at `<trip_url>/insights`.
+    @param trip_dir Directory where the page HTML snapshot is saved.
+    @param save_html When true, save the page HTML for debugging.
+    @return Tuple (insights, companions): a dictionary {"description", "countries", "distance", "transports"} where countries is a list of
+        {"name", "flag"},
+        transports is a list of {"name", "distance"}, and a list of {"uid", "name", "avatar"}
+        dictionaries (both empty when unavailable).
+    """
+    insights_url = trip_url.rstrip("/") + "/insights"
+    print(f"  - Getting page [{insights_url}] ...")
+    try:
+        response = page.goto(insights_url, wait_until="domcontentloaded", timeout=30000)
+        if response is not None and not response.ok:
+            return {}, []
+        page.wait_for_timeout(1000)
+        page_html = page.content()
+    except Exception:
+        return {}, []
+
+    if save_html:
+        with open(os.path.join(trip_dir, "insights.html"), "w", encoding="utf-8") as f:
+            f.write(page_html)
+
+    page_soup = BeautifulSoup(page_html, "html.parser")
+    insights = {"description": "", "countries": [], "distance": "", "transports": []}
+
+    description_el = page_soup.select_one(".tripInsights .tripInsightsSection p")
+    if description_el:
+        insights["description"] = extract_expandable_text(description_el)
+
+    def to_km(text):
+        match = re.search(r"\d[\d.,\s]*", text or "")
+        return re.sub(r"[^\d]", "", match.group(0)) if match else ""
+
+    for li in page_soup.select("#countryBubbles li"):
+        name = clean_text(li.get_text(" ", strip=True))
+        if not name:
+            continue
+        img = li.select_one("img")
+        code = re.search(r"/flags-png/([a-z]{2})\.png", img.get("src", "") if img else "", flags=re.IGNORECASE)
+        flag = ""
+        if code:
+            cc = code.group(1).upper()
+            flag = chr(127397 + ord(cc[0])) + chr(127397 + ord(cc[1]))
+        insights["countries"].append({"name": name, "flag": flag})
+
+    for label_el in page_soup.select(".statsSection .sml"):
+        if "kilomet" in label_el.get_text().lower():
+            number = label_el.find_previous_sibling(class_="number")
+            if number:
+                insights["distance"] = to_km(number.get_text())
+            break
+
+    for li in page_soup.select(".transportStats li"):
+        name = li.select_one(".transport")
+        value = li.select_one(".value")
+        if name and value and to_km(value.get_text()):
+            insights["transports"].append(
+                {"name": clean_text(name.get_text()).lower(), "distance": to_km(value.get_text())}
+            )
+
+    companions = []
+    for li in page_soup.select("#FollowersList li.follower"):
+        link = li.select_one("a[href]")
+        img = li.select_one(".ppBox img")
+        name_el = li.select_one(".name")
+        uid = (link.get("href", "") if link else "").strip("/")
+        if not uid:
+            continue
+        avatar = img.get("src", "") if img else ""
+        if avatar.startswith("//"):
+            avatar = "https:" + avatar
+        elif avatar.startswith("/"):
+            avatar = urljoin(BASE_URL, avatar)
+        name = clean_text(name_el.get_text()) if name_el else clean_text(img.get("alt", "") if img else "")
+        companions.append({"uid": uid, "name": name, "avatar": avatar})
+
+    return insights, companions
+
+
+def parse_trip_image(soup):
+    """! @brief Extract the main (cover) image URL of a trip from its trip page.
+    @param soup BeautifulSoup object for the trip page.
+    @return Absolute image URL, or empty string when missing or when it is the default placeholder.
+    """
+    title_box = soup.select_one("#tripBox .titleBox")
+    style = title_box.get("style", "") if title_box else ""
+    match = re.search(r"url\(\s*['\"]?([^'\")]+)", style)
+    if not match:
+        return ""
+    url = match.group(1).strip()
+    if "trip_preview" in url:
+        return ""
+    if url.startswith("//"):
+        return "https:" + url
+    if url.startswith("/"):
+        return urljoin(BASE_URL, url)
+    return url
+
+
 def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
     """! @brief Parse one trip in detail and collect enriched footprint data.
     @param page Active Playwright page.

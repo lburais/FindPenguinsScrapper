@@ -19,6 +19,64 @@ from fp_utils import gpx_tag, add_text_element, format_tree
 from fp_elevation import fetch_elevations
 
 
+def _add_companion(parent, companion):
+    """! @brief Append a `<companion>` element with `uid`, `name` and `picture` sub-elements.
+    @param parent Parent XML element.
+    @param companion Companion dictionary.
+    @return None
+    """
+    companion_el = ET.SubElement(parent, "companion")
+    for key in ("uid", "name", "picture"):
+        add_text_element(companion_el, key, companion.get(key, ""), namespace=None)
+
+
+TRIP_DETAIL_KEYS = ["description", "countries", "distance", "transports"]
+
+
+def _add_trip_details(parent, trip):
+    """! @brief Append description, countries, distance and transports elements of a trip.
+    @param parent Parent XML element.
+    @param trip Trip dictionary (missing fields are skipped).
+    @return None
+    """
+    add_text_element(parent, "description", trip.get("description", ""), namespace=None)
+    countries = trip.get("countries") or []
+    if countries:
+        countries_el = ET.SubElement(parent, "countries")
+        for country in countries:
+            country_el = ET.SubElement(countries_el, "country")
+            for key in ("name", "flag"):
+                add_text_element(country_el, key, country.get(key, ""), namespace=None)
+    add_text_element(parent, "distance", trip.get("distance", ""), namespace=None)
+    transports = trip.get("transports") or []
+    if transports:
+        transports_el = ET.SubElement(parent, "transports")
+        for transport in transports:
+            transport_el = ET.SubElement(transports_el, "transport")
+            add_text_element(transport_el, "name", transport.get("name", ""), namespace=None)
+            add_text_element(transport_el, "distance", transport.get("distance", ""), namespace=None)
+
+
+def _insights_lines(insights, bullet, text):
+    """! @brief Build list lines describing trip details for Markdown/RST output.
+    @param insights Trip dictionary holding the detail fields (may be empty).
+    @param bullet List bullet marker.
+    @param text Text-escaping function.
+    @return List of lines.
+    """
+    insights = insights or {}
+    lines = []
+    if insights.get("description"):
+        lines.append(f"{bullet} **Description:** {text(insights['description'])}")
+    if insights.get("countries"):
+        lines.append(f"{bullet} **Countries:** {text(', '.join(f"{c.get('flag', '')} {c.get('name', '')}".strip() for c in insights['countries']))}")
+    if insights.get("distance"):
+        lines.append(f"{bullet} **Distance:** {text(insights['distance'])} km")
+    for transport in insights.get("transports") or []:
+        lines.append(f"{bullet} **{text(transport.get('name', '').capitalize())}:** {text(transport.get('distance', ''))} km")
+    return lines
+
+
 def distance_meters(lat1, lon1, lat2, lon2):
     """! @brief Compute great-circle distance between two coordinates in meters.
     @param lat1 First latitude.
@@ -196,20 +254,19 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints, elevation):
         trip_meta = ET.SubElement(metadata, gpx_tag("extensions"))
 
     for key, value in trip.items():
-        if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current", "url"]:
+        if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "url"] + TRIP_DETAIL_KEYS:
             continue
         print(f"    - trip[{key}] : {value}")
         add_text_element(trip_meta, key, value, namespace=None)
 
     add_text_element(trip_meta, "uid", author_uid, namespace=None)
+    _add_trip_details(trip_meta, trip)
 
     for companion in trip.get("companions", []):
-        companion_uid = str(companion.get("uid", "")).strip()
-        if not companion_uid:
+        if not str(companion.get("uid", "")).strip():
             continue
-        print(f"    - companion[uid] : {companion_uid}")
-        companion_ext = ET.SubElement(trip_meta, "companion")
-        companion_ext.text = companion_uid
+        print(f"    - companion[uid] : {companion.get('uid')}")
+        _add_companion(trip_meta, companion)
 
     waypoints = []
     for footprint in footprints:
@@ -320,7 +377,7 @@ def build_user_xml(user_data, trips):
     for trip in trips:
         trip_el = ET.SubElement(trips_el, "trip")
         for key, value in trip.items():
-            if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current"]:
+            if key in ["companions", "footprints", "gpx", "period", "km", "is_current"] + TRIP_DETAIL_KEYS:
                 continue
             print(f"    - trip[{key}] : {value}")
             add_text_element(trip_el, key, value, namespace=None)
@@ -329,10 +386,8 @@ def build_user_xml(user_data, trips):
         gpx_ref.text = trip.get("gpx", "")
 
         for companion in trip.get("companions", []):
-            companion_el = ET.SubElement(trip_el, "companion")
-            companion_uid = str(companion.get("uid", "")).strip()
-            print(f"    - companion[uid] : {companion_uid}")
-            companion_el.text = companion_uid
+            print(f"    - companion[uid] : {companion.get('uid', '')}")
+            _add_companion(trip_el, companion)
 
     tree = ET.ElementTree(root)
     return format_tree(tree)
@@ -547,6 +602,11 @@ def build_trip_markdown(content_dir, trip_dir, user_data, trip, footprints):
     if trip.get("km"):
         chapters.extend([f"**Distance:** {_markdown_text(trip['km'])}", ""])
 
+    if any(trip.get(key) for key in TRIP_DETAIL_KEYS):
+        chapters.extend(["## Insights", ""])
+        chapters.extend(_insights_lines(trip, "-", _markdown_text))
+        chapters.append("")
+
     chapters.extend(["## Footprints", ""])
     for index, footprint in enumerate(footprints, start=1):
         title = str(footprint.get("title") or f"Étape {index}").strip()
@@ -711,6 +771,10 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         if value:
             chapters.extend([f"**{label}:** {_rst_text(value)}", ""])
 
+    if any(trip.get(key) for key in TRIP_DETAIL_KEYS):
+        chapters.extend([_rst_heading("Insights", "-"), ""])
+        chapters.extend(_insights_lines(trip, "*", _rst_text))
+        chapters.append("")
     chapters.extend([_rst_heading("Footprints", "-"), ""])
     for index, footprint in enumerate(footprints, start=1):
         title = str(footprint.get("title") or f"Étape {index}").strip()
@@ -1054,7 +1118,7 @@ def build_merged_xml(profiles_data):
         for trip in trips:
             trip_el = ET.SubElement(trips_el, "trip")
             for key, value in trip.items():
-                if key in ["companions", "footprints", "gpx", "period", "days", "km", "is_current"]:
+                if key in ["companions", "footprints", "gpx", "period", "km", "is_current"] + TRIP_DETAIL_KEYS:
                     continue
                 add_text_element(trip_el, key, value, namespace=None)
 
@@ -1062,8 +1126,7 @@ def build_merged_xml(profiles_data):
             gpx_ref.text = trip.get("gpx", "")
 
             for companion in trip.get("companions", []):
-                companion_el = ET.SubElement(trip_el, "companion")
-                companion_el.text = str(companion.get("uid", "")).strip()
+                _add_companion(trip_el, companion)
 
     tree = ET.ElementTree(root)
     return format_tree(tree)

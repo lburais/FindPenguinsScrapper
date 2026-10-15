@@ -187,7 +187,7 @@ def normalize_photo_url(img_url):
     """
     parsed = urlparse(img_url)
     dirname, filename = os.path.split(parsed.path)
-    new_filename = re.sub(r"(_m_s|_t_s)(\.[A-Za-z0-9]+)$", r"_l\\2", filename)
+    new_filename = re.sub(r"(_m_s|_t_s)(\.[A-Za-z0-9]+)$", r"_l\2", filename)
     new_path = os.path.join(dirname, new_filename)
     return parsed._replace(path=new_path).geturl()
 

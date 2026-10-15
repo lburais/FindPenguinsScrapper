@@ -48,7 +48,7 @@ Page: the profile page, elements `.tripList .tripPreviewBox`. Only boxes whose l
 | `slug` | Last segment of the trip URL path | Used as the output folder name. |
 | `title` | `.content .title h2` | |
 | `period` | First `.content .stats li` | Text, e.g. `2024Jul–Aug`. |
-| `days` | Second `.stats li`, `<b>` text | |
+| `days` | Second `.stats li`, `<b>` text | Total number of trip days; written to the XML and GPX trip metadata. |
 | `km` | Third `.stats li`, `<b>` text | Only when the text contains "kilometer". |
 | `is_current` | Presence of `.badge.current` | Stored as the string `True`/`False`. |
 | `companions[]` | `.userIconBar span.item` | See below. |
@@ -71,6 +71,50 @@ The internal trip id is read from `div.tripBox[data-trip-id]` on the trip page.
 The route is then downloaded with the authenticated session from
 `/account/trips/<trip_id>/travel-route.gpx` (30 s timeout) and saved as `<trip_dir>/<slug>.gpx`.
 It provides the `trk`/`trkpt` track points (`lat`, `lon`, `time`) used later.
+
+### Trip insights (`parse_trip_insights`)
+
+Insights are a trip subpage (`<trip_url>/insights`, e.g. `/<profile>/trip/<slug>/insights`), loaded
+in Playwright after the footprints are parsed. A non-OK response yields no fields. The page HTML is
+saved as `<trip_dir>/insights.html` to help tuning the extraction. The extracted fields are stored
+directly on the trip dictionary (there is no `insights` level):
+
+| Field | Source | Notes |
+|-------|--------|-------|
+| `description` | First paragraph `.tripInsights .tripInsightsSection p` | Trip description text. |
+| `countries[].name` | `#countryBubbles li` | Country name. |
+| `countries[].flag` | `img` `src` (`/flags-png/<cc>.png`) | Emoji flag built from the country code. |
+| `distance` | `.statsSection .number` next to the "kilometers" label | Digits only (`2,436` → `2436`), km. |
+| `transports[].name` | `.transportStats li .transport` | Lower-cased, e.g. `camper`, `flight`, `train`. |
+| `transports[].distance` | `.transportStats li .value` | Digits only, km. |
+
+XML/GPX output (trip metadata extensions):
+
+```xml
+<description>…</description>
+<countries>
+  <country><name>France</name><flag>🇫🇷</flag></country>
+</countries>
+<distance>2436</distance>
+<transports>
+  <transport><name>camper</name><distance>1419</distance></transport>
+</transports>
+```
+
+`trip.md`/`trip.rst` list them under an `Insights` heading.
+
+`parse_trip_insights` also returns the companions from "Travelers in this trip"
+(`#FollowersList li.follower`): `uid` (link `href`), `name` (`.name`) and `avatar` (`.ppBox img` `src`, made
+absolute). The avatar is downloaded to `<trip_dir>/companion_<uid>_*` and its relative path stored
+as `picture`. When found, these replace the thumbnail-only companions of the profile list in
+`trip["companions"]`. Each is written as
+`<companion><uid>…</uid><name>…</name><picture>…</picture></companion>`.
+
+### Trip main image (`parse_trip_image`)
+
+On the trip page, the cover image is the `background-image: url(...)` of `#tripBox .titleBox`. It is
+downloaded to `<trip_dir>/cover_*` and its relative path stored in `trip["image"]`. Trips using the
+default placeholder (`trip_preview.png`) have no main image and the field stays empty.
 
 ## 5. Footprints (`parse_footprints` and `parse_trip`)
 
@@ -160,7 +204,7 @@ Built in [fp_writers.py](../fp_writers.py) from the data above:
 
 | Output | Fields |
 |--------|--------|
-| `<profile>.xml` | Profile fields (`uid`, `name`, `bio`, `location`, `website`, `picture`, `email`); per trip `slug`, `title`, `url`, `gpx`, `companion` uids. `period`, `days`, `km`, `is_current` and the companion details are not written. |
+| `<profile>.xml` | Profile fields (`uid`, `name`, `bio`, `location`, `website`, `picture`, `email`); per trip `slug`, `title`, `days`, `url`, `gpx`, `companion` uids. `period`, `km`, `is_current` and the companion details are not written. |
 | `<slug>.gpx` | Waypoint: `lat`, `lon`, `name`=title, `desc`=text, `ele`=altitude, `link`=url; extensions `date`, `day`, `weather`, `temperature`, `overnights`, `flag`, `country`, `city`, `text-private`, `reference`, `photo`, `video`, `point`. Metadata: trip `title`, `period` (as `desc`, only for a new GPX), author name/email/website, trip link, `uid`, `companion`. |
 | Markdown / RST (Pelican) | Footprint pages: every GPX waypoint field is a Pelican metadata tag, except `desc`, which is the page body (the footprint text, with references turned into links). See below. |
 | HTML | Rendered from the same dictionaries. |
