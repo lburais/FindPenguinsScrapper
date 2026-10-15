@@ -58,7 +58,7 @@ def _add_trip_details(parent, trip):
 
 
 def _insights_lines(insights, bullet, text):
-    """! @brief Build list lines describing trip details for Markdown/RST output.
+    """! @brief Build list lines describing trip details for RST output.
     @param insights Trip dictionary holding the detail fields (may be empty).
     @param bullet List bullet marker.
     @param text Text-escaping function.
@@ -427,32 +427,11 @@ def _write_html(path, content):
         f.write(content)
 
 
-def _write_markdown(path, content):
-    """! @brief Write a Markdown document, creating parent folders."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-
 def _write_rst(path, content):
     """! @brief Write a reStructuredText document, creating parent folders."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
-
-
-def _pelican_metadata(**fields):
-    """! @brief Format Pelican's Markdown metadata header."""
-    return "\n".join(
-        f"{name}: {' '.join(str(value or '').split())}"
-        for name, value in fields.items()
-        if value not in (None, "")
-    )
-
-
-def _markdown_text(value):
-    """! @brief Escape text used in Markdown link labels."""
-    return str(value or "").replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
 def _references_by_search(references):
@@ -464,35 +443,6 @@ def _references_by_search(references):
         if search_text and url.lower().startswith(("http://", "https://")):
             result.setdefault(search_text.casefold(), (search_text, url))
     return result
-
-
-def _text_with_markdown_references(text, references):
-    """! @brief Replace reference search text occurrences with Markdown links."""
-    text = str(text or "")
-    references_by_search = _references_by_search(references)
-    if not references_by_search:
-        return text
-
-    labels = [
-        label
-        for label, _ in sorted(
-            references_by_search.values(), key=lambda item: len(item[0]), reverse=True
-        )
-    ]
-    pattern = re.compile(
-        "|".join(re.escape(label) for label in labels), flags=re.IGNORECASE
-    )
-    return pattern.sub(
-        lambda match: _markdown_reference_link(
-            *references_by_search[match.group(0).casefold()]
-        ),
-        text,
-    )
-
-
-def _markdown_reference_link(search_text, url):
-    """! @brief Format one Markdown link using the reference search text."""
-    return f"[{_markdown_text(search_text)}](<{url.replace('>', '%3E')}>)"
 
 
 def _text_with_html_references(text, references):
@@ -524,7 +474,7 @@ def _text_with_html_references(text, references):
 
 
 def _copy_media(media_paths, destination_dir):
-    """! @brief Copy media into a Markdown document folder and return relative paths."""
+    """! @brief Copy media into a document folder and return relative paths."""
     os.makedirs(destination_dir, exist_ok=True)
     copied_paths = []
     for media_path in media_paths:
@@ -566,131 +516,6 @@ def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
         "Gpx": ", ".join(_copy_media(footprint.get("gpx", []), footprint_dir)),
         "Pdf": ", ".join(_copy_media(footprint.get("pdf", []), footprint_dir)),
     }
-
-
-def build_trip_markdown(content_dir, trip_dir, user_data, trip, footprints):
-    """! @brief Build Pelican Markdown for a trip and each of its footprints.
-    @param content_dir Pelican pages source directory.
-    @param trip_dir Scraped trip folder containing downloaded media.
-    @param user_data Dictionary of profile-level fields.
-    @param trip Dictionary describing one trip.
-    @param footprints List of trip footprint dictionaries.
-    @return None
-    """
-
-    uid = str(user_data.get("uid", "")).strip()
-    trip_slug = str(trip.get("slug", "")).strip()
-    trip_title = str(trip.get("title") or trip_slug).strip()
-    markdown_trip_dir = os.path.join(content_dir, uid, trip_slug)
-    source_trip_path = f"pages/{uid}/{trip_slug}"
-    print(f"  - Building trip Markdown [{markdown_trip_dir}]...")
-
-    metadata = _pelican_metadata(
-        Title=trip_title,
-        Slug=f"{uid}-{trip_slug}",
-        Category="Trips",
-        Tags="findpenguins, travel",
-        Summary=trip.get("period", ""),
-        Template="findpenguins_trip",
-    )
-    chapters = [metadata, "", f"# {_markdown_text(trip_title)}", ""]
-
-    if trip.get("period"):
-        chapters.extend([f"**Period:** {_markdown_text(trip['period'])}", ""])
-    if trip.get("days"):
-        chapters.extend([f"**Duration:** {_markdown_text(trip['days'])}", ""])
-    if trip.get("km"):
-        chapters.extend([f"**Distance:** {_markdown_text(trip['km'])}", ""])
-
-    if any(trip.get(key) for key in TRIP_DETAIL_KEYS):
-        chapters.extend(["## Insights", ""])
-        chapters.extend(_insights_lines(trip, "-", _markdown_text))
-        chapters.append("")
-
-    chapters.extend(["## Footprints", ""])
-    for index, footprint in enumerate(footprints, start=1):
-        title = str(footprint.get("title") or f"Étape {index}").strip()
-        chapters.append(
-            f"{index}. [{_markdown_text(title)}]"
-            f"({{filename}}/{source_trip_path}/footprint_{index}/footprint.md)"
-        )
-    chapters.append("")
-    _write_markdown(os.path.join(markdown_trip_dir, "trip.md"), "\n".join(chapters))
-
-    for index, footprint in enumerate(footprints, start=1):
-        footprint_dir = os.path.join(markdown_trip_dir, f"footprint_{index}")
-        title = str(footprint.get("title") or f"Étape {index}").strip()
-        city = str(footprint.get("city", "")).strip()
-        country = str(footprint.get("country", "")).strip()
-        location = ", ".join(part for part in (city, country) if part)
-        footprint_metadata = _pelican_metadata(
-            Title=title,
-            Date=footprint.get("date", ""),
-            Slug=f"{uid}-{trip_slug}-etape-{index}",
-            Category=trip_title,
-            Tags=", ".join(part for part in ("findpenguins", city, country) if part),
-            Summary=location or footprint.get("weather", ""),
-            Template="findpenguins_footprint",
-            **_footprint_gpx_fields(footprint, footprint_dir, trip.get("days", "")),
-        )
-        # Body is the GPX desc only (the footprint text).
-        text = str(footprint.get("text", "")).strip()
-        content = [
-            footprint_metadata,
-            "",
-            _text_with_markdown_references(text, footprint.get("references", [])),
-            "",
-        ]
-        _write_markdown(os.path.join(footprint_dir, "footprint.md"), "\n".join(content))
-
-
-def build_user_markdown(content_dir, profile_dir, user_data, trips):
-    """! @brief Build a Pelican Markdown page listing one user's trips.
-    @param content_dir Pelican pages source directory.
-    @param profile_dir Scraped profile folder containing the profile picture.
-    @param user_data Dictionary of profile-level fields.
-    @param trips List of trip dictionaries.
-    @return None
-    """
-
-    uid = str(user_data.get("uid", "")).strip()
-    name = str(user_data.get("name") or uid).strip()
-    markdown_user_dir = os.path.join(content_dir, uid)
-    print(f"  - Building user Markdown [{markdown_user_dir}]...")
-
-    content = [
-        _pelican_metadata(Title=name, Slug=uid, Template="findpenguins_user"),
-        "",
-        f"# {_markdown_text(name)}",
-        "",
-    ]
-    if user_data.get("picture"):
-        picture_path = str(user_data["picture"])
-        if not picture_path.startswith(("http://", "https://")):
-            picture_path = os.path.join(profile_dir, picture_path)
-            picture_path = _copy_media([picture_path], markdown_user_dir)[0]
-        content.extend([f"![{_markdown_text(name)}]({picture_path})", ""])
-    if user_data.get("location"):
-        content.extend([f"**Location:** {_markdown_text(user_data['location'])}", ""])
-    if user_data.get("website"):
-        content.extend([f"**Website:** <{user_data['website']}>", ""])
-    if user_data.get("bio"):
-        content.extend([str(user_data["bio"]).strip(), ""])
-
-    content.extend(["## Trips", ""])
-    for trip in trips:
-        slug = str(trip.get("slug", "")).strip()
-        if not slug:
-            continue
-        title = str(trip.get("title") or slug).strip()
-        period = str(trip.get("period", "")).strip()
-        suffix = f" — {_markdown_text(period)}" if period else ""
-        content.append(
-            f"- [{_markdown_text(title)}]"
-            f"({{filename}}/pages/{uid}/{slug}/trip.md){suffix}"
-        )
-    content.append("")
-    _write_markdown(os.path.join(markdown_user_dir, "user.md"), "\n".join(content))
 
 
 def _rst_text(value):

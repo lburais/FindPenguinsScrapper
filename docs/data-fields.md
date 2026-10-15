@@ -101,7 +101,7 @@ XML/GPX output (trip metadata extensions):
 </transports>
 ```
 
-`trip.md`/`trip.rst` list them under an `Insights` heading.
+`trip.rst` lists them under an `Insights` heading.
 
 `parse_trip_insights` also returns the companions from "Travelers in this trip"
 (`#FollowersList li.follower`): `uid` (link `href`), `name` (`.name`) and `avatar` (`.ppBox img` `src`, made
@@ -206,10 +206,10 @@ Built in [fp_writers.py](../fp_writers.py) from the data above:
 |--------|--------|
 | `<profile>.xml` | Profile fields (`uid`, `name`, `bio`, `location`, `website`, `picture`, `email`); per trip `slug`, `title`, `days`, `url`, `gpx`, `companion` uids. `period`, `km`, `is_current` and the companion details are not written. |
 | `<slug>.gpx` | Waypoint: `lat`, `lon`, `name`=title, `desc`=text, `ele`=altitude, `link`=url; extensions `date`, `day`, `weather`, `temperature`, `overnights`, `flag`, `country`, `city`, `text-private`, `reference`, `photo`, `video`, `point`. Metadata: trip `title`, `period` (as `desc`, only for a new GPX), author name/email/website, trip link, `uid`, `companion`. |
-| Markdown / RST (Pelican) | Footprint pages: every GPX waypoint field is a Pelican metadata tag, except `desc`, which is the page body (the footprint text, with references turned into links). See below. |
+| RST (Pelican) | Footprint pages: every GPX waypoint field is a Pelican metadata tag, except `desc`, which is the page body (the footprint text, with references turned into links). See below. |
 | HTML | Rendered from the same dictionaries. |
 
-### Pelican footprint metadata (`footprint.rst` / `footprint.md`)
+### Pelican footprint metadata (`footprint.rst`)
 
 | GPX field | Pelican tag |
 |-----------|-------------|

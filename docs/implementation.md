@@ -14,7 +14,6 @@ Arguments:
 - `--output`: output folder (default is `output`, currently workflow writes to `output/<id>` directly).
 - `--trip`: optional trip slug filter.
 - `--save-html`: store fetched HTML pages locally for debugging.
-- `--md PATH`: generate Pelican-compatible Markdown pages.
 - `--rst PATH`: generate Pelican-compatible reStructuredText pages.
 
 ## Step-by-Step Flow
@@ -92,11 +91,11 @@ For each trip:
 - Private text processing extracts reference lines in `[search text] URL` or `URL` form.
   - Only valid HTTP(S) URLs are extracted and stored as `(search text, URL)` pairs; extracted lines are removed from `text-private`.
   - Invalid or non-HTTP(S) URL lines remain in `text-private`.
-  - Non-empty search text occurrences in the footprint text are rendered as links in HTML, Markdown, and reStructuredText.
+  - Non-empty search text occurrences in the footprint text are rendered as links in HTML and reStructuredText.
 
 ## Pelican Source Exports
 
-- `--md PATH` and `--rst PATH` each generate a profile page, one trip page, and one page per footprint.
+- `--rst PATH` generates a profile page, one trip page, and one page per footprint.
 - Both formats use Pelican `{filename}` links and copy profile pictures and footprint media beside their pages.
 - reStructuredText uses field-list metadata and native image/link syntax; videos are included through a raw HTML directive.
 
