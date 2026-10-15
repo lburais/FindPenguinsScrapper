@@ -12,7 +12,7 @@ Source files: [fp_utils.py](../fp_utils.py), [fp_parsers.py](../fp_parsers.py),
 | Headless browser | Playwright (Chromium) seeded with the session cookies ([`create_browser_page`](../fp_utils.py)) | Rendering profile, trip and footprint pages ([`load_page`](../fp_utils.py)) and the footprint popup menu. |
 | HTML parsing | BeautifulSoup on `page.content()` | Extracting fields via CSS selectors. |
 | Direct HTTP download | `requests` | GPX route, photos, videos, profile picture. |
-| Third-party API | OpenTopoData SRTM 90m | Optional track elevations (`--elevation`). |
+| Third-party API | OpenTopoData SRTM 90m | Track elevation enrichment is enabled by default; disable it with `--no-elevation`. |
 
 Page flow: profile page → trip pages (`/<profile>/trip/<slug>`) → one page per footprint.
 On trip pages, `click_load_more_until_done` clicks `#footprintListLoadMore` until the whole footprint list is loaded.
@@ -197,7 +197,7 @@ Built in [fp_writers.py](../fp_writers.py) from the data above:
 |------|-----|
 | Waypoint `time` | Time of the closest GPX track point to the waypoint (haversine distance). |
 | Waypoint extension `point` | `lat`/`lon` of that closest track point. |
-| Track point `ele` | OpenTopoData SRTM90m, batches of 100 points, retries with exponential back-off on HTTP 429. Only with `--elevation`. |
+| Track point `ele` | OpenTopoData SRTM90m, batches of 100 points, retries with exponential back-off on HTTP 429. Disabled with `--no-elevation`. |
 | Trip metadata `uid` | First segment of the trip URL, or the profile name. |
 
 ## 7. Where the fields end up

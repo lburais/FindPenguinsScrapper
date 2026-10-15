@@ -4,6 +4,10 @@ output/
 pages/
 venv/
 .gitignore
-.DS_Store
 .tile-cache/
+findpenguins_scrapper.dist/
+findpenguins_scrapper.build/
+findpenguins_scrapper.onefile-build/
 profiles.json
+.gitignore
+nuitka-crash-report.xml

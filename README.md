@@ -89,11 +89,12 @@ Lancez ensuite simplement l'extraction par le nom du profil :
 ```bash
 python findpenguins_scrapper.py --profile-name MonVoyageur
 ```
+Sans `--profile` ni `--profile-name`, le programme affiche les profils disponibles et demande lesquels scraper. Saisissez un ou plusieurs noms séparés par des virgules ; appuyez sur Entrée pour tous les sélectionner. Cela nécessite un terminal interactif.
 
 ### Options Disponibles
 - `-o`, `--output` : Spécifier le dossier de destination (Par défaut : `output`).
 - `-t`, `--trip` : Isoler et parser uniquement un voyage spécifique via son slug d'URL.
-- `--elevation` : Activer la correction et l'enrichissement des données d'altitude sur les tracés GPX.
+- `--no-elevation` : Désactiver la correction et l'enrichissement des données d'altitude sur les tracés GPX (activés par défaut).
 - `--save-html` : Conserver les captures HTML brutes téléchargées à des fins de débogage.
 - `--html [PATH]` : Générer les pages HTML du livre de voyage sous `PATH` (par défaut, le dossier `--output`).
 - `--rst PATH` : Générer les pages reStructuredText compatibles avec Pelican sous `PATH`.

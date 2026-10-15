@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import shutil
+import sys
 from urllib.parse import urljoin
 
 from fp_config import BASE_URL
@@ -264,6 +265,36 @@ def generate_rst_outputs(content_dir, output, profiles_data):
         build_user_rst(content_dir, profile_dir, user_data, trips)
 
 
+def prompt_for_profile_names(credentials):
+    """! @brief Prompt for one or more named profiles from a credentials file.
+    @param credentials JSON credentials file path.
+    @return Selected profile names, or all names when the selection is empty.
+    """
+    with open(credentials, encoding="utf-8") as f:
+        known_profiles = json.load(f)
+
+    if not isinstance(known_profiles, dict) or not known_profiles:
+        raise ValueError(f"No profiles found in {credentials}")
+
+    profile_names = list(known_profiles)
+    print("Available profiles:")
+    for name in profile_names:
+        print(f"  - {name}")
+
+    while True:
+        selection = input("Profile name(s), comma-separated (Enter for all): ").strip()
+        if not selection:
+            return profile_names
+
+        selected_names = [name.strip() for name in selection.split(",") if name.strip()]
+        unknown_names = [name for name in selected_names if name not in known_profiles]
+        if unknown_names:
+            print(f"Unknown profile(s): {', '.join(unknown_names)}")
+            continue
+        if selected_names:
+            return selected_names
+
+
 # ##############################################################################################
 # __main__
 # ##############################################################################################
@@ -277,24 +308,31 @@ if __name__ == "__main__":
 
     parser.add_argument("--profile", action='append', nargs=3, metavar=('ID', 'USERNAME', 'PASSWORD'),
                         help="Profile triplet: id username password (can be used multiple times)")
-    parser.add_argument("--credentials", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles.json"),
+    app_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+    parser.add_argument("--credentials", default=os.path.join(app_dir, "profiles.json"),
                         help="JSON file mapping profile names to {id, username, password}")
     parser.add_argument("--profile-name", action='append', metavar='NAME',
                         help="Profile name from the credentials file (can be used multiple times; default: all)")
     parser.add_argument("-o", "--output", default="output", help="Output folder")
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
-    parser.add_argument("--elevation", action="store_true", help="Adjust tracks elevation")
+    parser.add_argument("--no-elevation", dest="elevation", action="store_false", default=True, help="Skip track elevation adjustment (enabled by default)")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
-    parser.add_argument(
-        "--html",
-        nargs="?",
-        const="",
-        metavar="PATH",
-        help="Generate HTML travel book pages under PATH (default: --output)",
-    )
+    parser.add_argument("--html", metavar="PATH", help="Generate HTML travel book pages under PATH (default: --output)")
     parser.add_argument("--rst", metavar="PATH", help="Generate Pelican reStructuredText pages under PATH")
 
     arguments = parser.parse_args()
+
+    if not arguments.profile and not arguments.profile_name:
+        if not sys.stdin.isatty():
+            parser.error("provide --profile/--profile-name or run without them in an interactive terminal")
+        try:
+            arguments.profile_name = prompt_for_profile_names(arguments.credentials)
+        except FileNotFoundError:
+            parser.error(
+                f"credentials file not found: {arguments.credentials}; provide --credentials or use --profile"
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
 
     profiles_data = scrapper(
         arguments.profile,

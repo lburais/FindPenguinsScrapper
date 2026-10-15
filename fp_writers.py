@@ -582,6 +582,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
             Category="Trips",
             Tags="findpenguins, travel",
             Summary=trip.get("period", ""),
+            Days=trip.get("days", ""),
             Template="findpenguins_trip",
         ),
         "",

@@ -1,7 +1,5 @@
-bs4
+beautifulsoup4
 requests
-argparse
 playwright
-imageio
-imageio-ffmpeg
-pillow
+numpy
+scipy
