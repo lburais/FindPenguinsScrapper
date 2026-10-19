@@ -25,6 +25,7 @@ from fp_writers import (
     build_global_html,
     build_trip_rst,
     build_user_rst,
+    build_findpenguins_rst,
 )
 
 # ##############################################################################################
@@ -263,6 +264,7 @@ def generate_rst_outputs(content_dir, output, profiles_data):
             build_trip_rst(content_dir, trip_dir, user_data, trip, trip.get("footprints", []))
 
         build_user_rst(content_dir, profile_dir, user_data, trips)
+    build_findpenguins_rst(content_dir, profiles_data)
 
 
 def prompt_for_profile_names(credentials):

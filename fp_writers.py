@@ -5,6 +5,7 @@ Writers in this module preserve user-requested schema semantics including
 metadata extensions, waypoint ordering, and indentation style.
 """
 
+from datetime import date
 import os
 import html
 import json
@@ -817,6 +818,55 @@ def build_user_rst(content_dir, profile_dir, user_data, trips):
         content.append(f"* {link}" + (f" — {_rst_text(period)}" if period else ""))
     content.append("")
     _write_rst(os.path.join(rst_user_dir, "user.rst"), "\n".join(content))
+
+
+def build_findpenguins_rst(content_dir, profiles_data):
+    """! @brief Build a root Pelican page listing trips across all scraped profiles.
+    Trips are ordered by their earliest footprint date first; trips without
+    a valid footprint date follow dated trips.
+    """
+    trips_with_profiles = []
+    for user_data, trips in profiles_data:
+        uid = str(user_data.get("uid", "")).strip()
+        profile_name = str(user_data.get("name") or uid).strip()
+        for trip in trips:
+            slug = str(trip.get("slug", "")).strip()
+            if not uid or not slug:
+                continue
+            dates = []
+            for footprint in trip.get("footprints", []):
+                try:
+                    dates.append(date.fromisoformat(str(footprint.get("date", "")).strip()[:10]))
+                except ValueError:
+                    continue
+            start_date = min(dates) if dates else None
+            trips_with_profiles.append((start_date, profile_name, uid, slug, trip))
+
+    trips_with_profiles.sort(
+        key=lambda item: item[0] or date.min,
+        reverse=True,
+    )
+
+    content = [
+        _rst_metadata(Title="Nos Carnets de Voyage", Slug="findpenguins", Template="findpenguins", Save_as= "findpenguins.html"),
+        "",
+        _rst_heading("FindPenguins"),
+        "",
+        _rst_heading("Trips", "-"),
+        "",
+    ]
+    for start_date, profile_name, uid, slug, trip in trips_with_profiles:
+        title = str(trip.get("title") or slug).strip()
+        trip_url = f"{{filename}}/pages/{uid}/{slug}/trip.rst"
+        link = f"`{_rst_text(title)} <{trip_url}>`_"
+        date_label = start_date.isoformat() if start_date else str(trip.get("period", "")).strip()
+        details = [value for value in (date_label, _rst_text(profile_name)) if value]
+        content.append(f"* {link}" + (f" — {' — '.join(details)}" if details else ""))
+    content.append("")
+
+    output_path = os.path.join(content_dir, "findpenguins.rst")
+    _write_rst(output_path, "\n".join(content))
+    print(f"  - Building FindPenguins index [{output_path}]...")
 
 
 def build_trip_html(trip_dir, trip, footprints):
