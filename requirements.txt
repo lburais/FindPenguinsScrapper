@@ -3,3 +3,6 @@ requests
 playwright
 numpy
 scipy
+geopandas
+matplotlib
+shapely

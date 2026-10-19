@@ -12,7 +12,8 @@ import re
 import shutil
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
-from math import radians, sin, cos, sqrt, atan2
+from functools import lru_cache
+from math import radians, sin, cos, sqrt, atan2, isfinite
 
 from fp_config import GPX_NS, XSI_NS
 from fp_utils import gpx_tag, add_text_element, format_tree
@@ -484,9 +485,142 @@ def _copy_media(media_paths, destination_dir):
     return copied_paths
 
 
+@lru_cache(maxsize=1)
+def _load_country_boundaries():
+    """! @brief Load and cache Natural Earth country boundaries."""
+    import geopandas as gpd
+
+    return gpd.read_file(
+        "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
+    )
+
+
+def save_full_country_map(lat, lon, padding_ratio=0.1, output_image="map_country.png"):
+    """! @brief Save a static map of the country or region containing a footprint.
+    @param lat Footprint latitude.
+    @param lon Footprint longitude.
+    @param padding_ratio Proportional margin around the country bounds.
+    @param output_image Destination image path.
+    @return Destination image path, or None if the coordinates are not in a country.
+    """
+    import geopandas as gpd
+    import matplotlib.pyplot as plt
+    from shapely.geometry import Point
+
+    lat = float(lat)
+    lon = float(lon)
+    padding_ratio = float(padding_ratio)
+    if not isfinite(lat) or not isfinite(lon) or not -90 <= lat <= 90 or not -180 <= lon <= 180:
+        raise ValueError(f"Invalid coordinates for country map: ({lat}, {lon})")
+    if not isfinite(padding_ratio) or padding_ratio < 0:
+        raise ValueError("padding_ratio must be non-negative")
+
+    target_point = Point(lon, lat)
+    world = _load_country_boundaries()
+    if world.crs is None:
+        raise ValueError("Country boundary dataset has no coordinate reference system")
+
+    point_in_world_crs = gpd.GeoSeries(
+        [target_point], crs="EPSG:4326"
+    ).to_crs(world.crs).iloc[0]
+    matches = world.loc[world.geometry.contains(point_in_world_crs)]
+    if matches.empty:
+        projected_world = world.to_crs(epsg=3857)
+        projected_point = gpd.GeoSeries(
+            [target_point], crs="EPSG:4326"
+        ).to_crs(epsg=3857).iloc[0]
+        distances = projected_world.geometry.distance(projected_point)
+        nearest_index = distances.idxmin()
+        if distances.loc[nearest_index] > 10_000:
+            print(f"  - WARNING: no country found for footprint coordinates ({lat}, {lon})")
+            return None
+        matches = world.loc[[nearest_index]]
+
+    country = matches.iloc[[0]].copy()
+    country_geometry = country.geometry.iloc[0]
+    if country_geometry.geom_type == "MultiPolygon":
+        polygons = list(country_geometry.geoms)
+        selected_polygon = next(
+            (polygon for polygon in polygons if polygon.contains(point_in_world_crs)),
+            None,
+        )
+        if selected_polygon is None:
+            selected_polygon = min(
+                polygons, key=lambda polygon: polygon.distance(point_in_world_crs)
+            )
+        country = country.set_geometry(
+            gpd.GeoSeries(
+                [selected_polygon], index=country.index, crs=world.crs
+            )
+        )
+
+    country_mercator = country.to_crs(epsg=3857)
+    point_mercator = gpd.GeoSeries(
+        [target_point], crs="EPSG:4326"
+    ).to_crs(epsg=3857).iloc[0]
+    xmin, ymin, xmax, ymax = country_mercator.total_bounds
+    padding_x = (xmax - xmin) * padding_ratio
+    padding_y = (ymax - ymin) * padding_ratio
+
+    output_dir = os.path.dirname(os.path.abspath(output_image))
+    os.makedirs(output_dir, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(10, 10), facecolor="none")
+    try:
+        ax.set_facecolor("none")
+        country_mercator.plot(
+            ax=ax,
+            edgecolor="#404040",
+            facecolor="#d3d3d3",
+            linewidth=1.2,
+            zorder=2,
+        )
+        ax.scatter(
+            point_mercator.x,
+            point_mercator.y,
+            facecolor="white",
+            edgecolor="#0098d8",
+            linewidth=4,
+            s=1350,
+            zorder=5,
+        )
+        ax.scatter(
+            point_mercator.x,
+            point_mercator.y,
+            facecolor="#0098d8",
+            edgecolor="white",
+            linewidth=2,
+            s=500,
+            zorder=6,
+        )
+        ax.set_xlim(xmin - padding_x, xmax + padding_x)
+        ax.set_ylim(ymin - padding_y, ymax + padding_y)
+        ax.set_axis_off()
+        fig.savefig(
+            output_image,
+            bbox_inches="tight",
+            dpi=300,
+            pad_inches=0.1,
+            transparent=True,
+        )
+    finally:
+        plt.close(fig)
+
+    country_name = next(
+        (
+            str(country.iloc[0][column])
+            for column in ("NAME", "ADMIN", "NAME_EN")
+            if column in country.columns and country.iloc[0][column]
+        ),
+        "unknown",
+    )
+    print(f"  - Saved country map for {country_name}: {output_image}")
+    return output_image
+
+
 def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
     """! @brief Map a footprint to the GPX waypoint fields used as Pelican metadata.
-    Every GPX field except `desc` (the footprint text, used as page body) is returned.
+    Every exported metadata field except `desc` (the footprint text, used as page body)
+    is returned. The map image is saved in the footprint directory.
     Media are copied into the footprint folder and listed by file name.
     @param footprint Normalized footprint data.
     @param footprint_dir Destination folder of the generated page.
@@ -496,6 +630,15 @@ def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
         f"{search_text}|{url}" if search_text else str(url)
         for search_text, url in footprint.get("references", [])
     )
+    lat = str(footprint.get("lat", "")).strip()
+    lon = str(footprint.get("lon", "")).strip()
+    if lat and lon:
+        save_full_country_map(
+            lat,
+            lon,
+            output_image=os.path.join(footprint_dir, "map_country.png"),
+        )
+
     return {
         "Lat": footprint.get("lat", ""),
         "Lon": footprint.get("lon", ""),

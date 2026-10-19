@@ -20,7 +20,7 @@ Ce script orchestre l'authentification, le scraping des données dynamiques (tex
   - Lecteurs vidéo HTML5 natifs intégrés directement dans le fil des récits.
 - **Export Pelican (reStructuredText) :**
   - Génération d'une page de profil, d'une page par voyage et d'un article par *footprint*.
-  - Métadonnées Pelican en champ reStructuredText.
+  - Métadonnées Pelican en champ reStructuredText, avec une image de la carte du pays enregistrée dans le dossier de chaque *footprint* géolocalisé.
   - Liens internes Pelican (`{filename}`), références, photos et vidéos intégrées.
 
 ---
@@ -50,11 +50,11 @@ cd FindPenguinsScrapper
 ```
 
 ### 2. Installer les dépendances Python
-Le script s'appuie sur plusieurs bibliothèques majeures (`requests`, `beautifulsoup4`, `playwright`, `scipy`, `numpy`) :
+Le script s'appuie sur plusieurs bibliothèques majeures (`requests`, `beautifulsoup4`, `playwright`, `scipy`, `numpy`, `geopandas`, `matplotlib`, `shapely`) :
 ```bash
 pip install -r requirements.txt
 # Ou manuellement :
-pip install requests beautifulsoup4 playwright numpy scipy
+pip install requests beautifulsoup4 playwright numpy scipy geopandas matplotlib shapely
 ```
 
 ### 3. Initialiser Playwright
@@ -129,6 +129,7 @@ output/
                 ├── trip.rst
                 └── footprint_1/
                     ├── footprint.rst
+                    ├── map_country.png
                     ├── img_12345_pic.jpg
                     └── vid_67890_mov.mp4
 ```

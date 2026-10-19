@@ -522,12 +522,12 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
 
         date = ""
         weather = ""
-        date_span = fp.select_one(".title .date .desc")
-        if date_span:
-            date = date_span.get("content", "")
-            desc_text = clean_text(date_span.get_text())
-            if "\u22c5" in desc_text:
-                weather = desc_text.split("\u22c5", 1)[1].strip()
+        date_el = fp.select_one(".title .flag-n-date[content]")
+        if date_el:
+            date = date_el.get("content", "").strip()
+        weather_el = fp.select_one(".title .weather")
+        if weather_el:
+            weather = clean_text(weather_el.get_text())
 
         text_el = fp.select_one(".content-container .text:not(.text-private)")
         text = extract_expandable_text(text_el)
