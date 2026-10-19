@@ -36,12 +36,11 @@ TRIP_DETAIL_KEYS = ["description", "countries", "distance", "transports"]
 
 
 def _add_trip_details(parent, trip):
-    """! @brief Append description, countries, distance and transports elements of a trip.
+    """! @brief Append countries, distance and transports elements of a trip.
     @param parent Parent XML element.
     @param trip Trip dictionary (missing fields are skipped).
     @return None
     """
-    add_text_element(parent, "description", trip.get("description", ""), namespace=None)
     countries = trip.get("countries") or []
     if countries:
         countries_el = ET.SubElement(parent, "countries")
@@ -255,8 +254,27 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints, elevation):
     if trip_meta is None:
         trip_meta = ET.SubElement(metadata, gpx_tag("extensions"))
 
+    trip_dates = []
+    for footprint in footprints:
+        try:
+            trip_dates.append(date.fromisoformat(str(footprint.get("date", "")).strip()[:10]))
+        except ValueError:
+            continue
+    start_date = min(trip_dates).isoformat() if trip_dates else ""
+    if start_date:
+        add_text_element(trip_meta, "start_date", start_date, namespace=None)
+
     for key, value in trip.items():
-        if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "url"] + TRIP_DETAIL_KEYS:
+        if key in [
+            "title",
+            "companions",
+            "footprints",
+            "gpx",
+            "period",
+            "km",
+            "is_current",
+            "url",
+        ] + TRIP_DETAIL_KEYS:
             continue
         print(f"    - trip[{key}] : {value}")
         add_text_element(trip_meta, key, value, namespace=None)
@@ -719,14 +737,65 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
     source_trip_path = f"pages/{uid}/{trip_slug}"
     print(f"  - Building trip reStructuredText [{rst_trip_dir}]...")
 
+    profile_dir = os.path.dirname(trip_dir)
+    trip_image = ""
+    if trip.get("image"):
+        image_path = str(trip["image"])
+        if not image_path.startswith(("http://", "https://")):
+            image_path = os.path.join(profile_dir, image_path)
+            trip_image = _copy_media([image_path], rst_trip_dir)[0]
+        else:
+            trip_image = image_path
+
+    companion_images = []
+    for companion in trip.get("companions") or []:
+        picture = str(companion.get("picture") or companion.get("avatar") or "").strip()
+        if not picture:
+            continue
+        if not picture.startswith(("http://", "https://")):
+            picture = os.path.join(profile_dir, picture)
+            picture = _copy_media([picture], rst_trip_dir)[0]
+        name = str(companion.get("name") or companion.get("uid") or "").strip()
+        companion_images.append(f"{name}|{picture}")
+
+    countries = ", ".join(
+        f"{country.get('flag', '')} {country.get('name', '')}".strip()
+        for country in trip.get("countries") or []
+    )
+    country_flags = ", ".join(
+        str(country.get("flag", "")).strip()
+        for country in trip.get("countries") or []
+        if str(country.get("flag", "")).strip()
+    )
+    trip_tags = ["findpenguins", "travel"]
+    known_tags = {tag.casefold() for tag in trip_tags}
+    insight_tags = [
+        str(country.get("name", "")).strip()
+        for country in trip.get("countries") or []
+    ] + [
+        str(transport.get("name", "")).strip()
+        for transport in trip.get("transports") or []
+    ]
+    for tag in insight_tags:
+        if tag and tag.casefold() not in known_tags:
+            trip_tags.append(tag)
+            known_tags.add(tag.casefold())
     chapters = [
         _rst_metadata(
             Title=trip_title,
             Slug=f"{uid}-{trip_slug}",
             Category="Trips",
-            Tags="findpenguins, travel",
-            Summary=trip.get("period", ""),
+            Tags=", ".join(trip_tags),
+            Summary=trip.get("description") or trip.get("period", ""),
             Days=trip.get("days", ""),
+            Period=trip.get("period", ""),
+            Distance=trip.get("distance") or trip.get("km", ""),
+            Countries=countries,
+            CountryFlags=country_flags,
+            Description=trip.get("description", ""),
+            Owner=user_data.get("name") or uid,
+            TripImage=trip_image,
+            Companions=";".join(companion_images),
             Template="findpenguins_trip",
         ),
         "",

@@ -20,7 +20,7 @@ Ce script orchestre l'authentification, le scraping des données dynamiques (tex
   - Lecteurs vidéo HTML5 natifs intégrés directement dans le fil des récits.
 - **Export Pelican (reStructuredText) :**
   - Génération d'une page de profil, d'une page par voyage et d'un article par *footprint*.
-  - Génération d'une page racine `findpenguins.rst` listant les voyages de tous les profils sélectionnés, classés par date de début décroissante.
+  - Génération d'une page racine `findpenguins.rst` présentant les voyages de tous les profils sélectionnés sous forme de cartes à image, compagnons et résumé, classées par date de début décroissante.
   - Métadonnées Pelican en champ reStructuredText, avec une image de la carte du pays enregistrée dans le dossier de chaque *footprint* géolocalisé.
   - Liens internes Pelican (`{filename}`), références, photos et vidéos intégrées.
 

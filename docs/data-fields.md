@@ -101,7 +101,9 @@ XML/GPX output (trip metadata extensions):
 </transports>
 ```
 
-`trip.rst` lists them under an `Insights` heading.
+`trip.rst` lists the insights in its content, and adds each country and transport name
+to Pelican's `Tags` metadata (alongside the `findpenguins` and `travel` tags). Duplicate
+tag names are omitted without regard to case.
 
 `parse_trip_insights` also returns the companions from "Travelers in this trip"
 (`#FollowersList li.follower`): `uid` (link `href`), `name` (`.name`) and `avatar` (`.ppBox img` `src`, made
