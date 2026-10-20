@@ -11,6 +11,8 @@ import json
 import os
 import shutil
 import sys
+import xml.etree.ElementTree as ET
+import requests
 from urllib.parse import urljoin
 
 from fp_config import BASE_URL
@@ -18,6 +20,7 @@ from fp_utils import login, create_browser_page, load_page, download_image
 from fp_parsers import parse_profile, parse_trips, parse_trip, parse_trip_insights, parse_trip_image
 from fp_writers import (
     build_trip_gpx,
+    save_trip_route_map,
     build_user_xml,
     build_merged_xml,
     build_trip_html,
@@ -120,6 +123,12 @@ def process_profile(profile_id, username, password, output, trip_slug, elevation
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
 
                 build_trip_gpx(trip_gpx, user_data, trip, footprints, elevation)
+                route_map = os.path.join(trip_dir, "map_trip.jpg")
+                try:
+                    if save_trip_route_map(trip_gpx, footprints, route_map):
+                        trip["route_map"] = os.path.relpath(route_map, output_dir)
+                except (OSError, ET.ParseError, ValueError, requests.RequestException) as exc:
+                    print(f"  - WARNING: unable to create satellite route map for {trip['title']}: {exc}")
 
                 old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
                 if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):

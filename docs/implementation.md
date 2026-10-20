@@ -96,6 +96,11 @@ For each trip:
 ## Pelican Source Exports
 
 - `--rst PATH` generates a profile page, one trip page, and one page per footprint.
+- Each trip page gets a `map_trip.jpg` generated from its GPX track with an Esri World Imagery
+  satellite background and numbered footprint markers. The full track and footprint coordinates
+  determine the map bounds; Esri imagery attribution is included on the image.
+- The trip-card template uses this route map as the card background, falling back to the trip
+  cover image when no route map can be generated.
 - Both formats use Pelican `{filename}` links and copy profile pictures and footprint media beside their pages.
 - reStructuredText uses field-list metadata and native image/link syntax; videos are included through a raw HTML directive.
 

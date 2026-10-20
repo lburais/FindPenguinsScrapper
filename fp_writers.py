@@ -6,10 +6,12 @@ metadata extensions, waypoint ordering, and indentation style.
 """
 
 from datetime import date
+from io import BytesIO
 import os
 import html
 import json
 import re
+import requests
 import shutil
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
@@ -636,6 +638,170 @@ def save_full_country_map(lat, lon, padding_ratio=0.1, output_image="map_country
     return output_image
 
 
+def _mercator_coordinates(lon, lat):
+    """! @brief Project longitude/latitude to Web Mercator meters."""
+    import math
+
+    lat = max(min(float(lat), 85.05112878), -85.05112878)
+    x = 6378137.0 * math.radians(float(lon))
+    y = 6378137.0 * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+    return x, y
+
+
+def save_trip_route_map(gpx_path, footprints, output_image):
+    """! @brief Save a satellite route map with numbered footprint bubbles.
+    @param gpx_path GPX containing the trip route track.
+    @param footprints Footprints to mark on the map.
+    @param output_image Destination image path.
+    @return Destination image path, or None when no route track/footprints exist.
+    """
+    import matplotlib.image as mpimg
+    import matplotlib.pyplot as plt
+
+    if not os.path.isfile(gpx_path):
+        print(f"  - WARNING: route map skipped; GPX file not found: {gpx_path}")
+        return None
+
+    root = ET.parse(gpx_path).getroot()
+    track_segments = []
+    for track in root.findall(gpx_tag("trk")):
+        for segment in track.findall(gpx_tag("trkseg")):
+            points = []
+            for track_point in segment.findall(gpx_tag("trkpt")):
+                try:
+                    lat = float(track_point.get("lat", ""))
+                    lon = float(track_point.get("lon", ""))
+                except ValueError:
+                    continue
+                if isfinite(lat) and isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180:
+                    points.append((lon, lat))
+            if points:
+                track_segments.append(points)
+
+    if not track_segments:
+        print(f"  - WARNING: route map skipped; GPX has no valid track points: {gpx_path}")
+        return None
+
+    footprint_points = []
+    for index, footprint in enumerate(footprints, start=1):
+        try:
+            lat = float(footprint.get("lat", ""))
+            lon = float(footprint.get("lon", ""))
+        except (TypeError, ValueError):
+            continue
+        if isfinite(lat) and isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180:
+            footprint_points.append((index, lon, lat))
+
+    all_points = [point for segment in track_segments for point in segment]
+    all_points.extend((lon, lat) for _, lon, lat in footprint_points)
+    projected = [_mercator_coordinates(lon, lat) for lon, lat in all_points]
+    xs, ys = zip(*projected)
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    width = max(xmax - xmin, 500)
+    height = max(ymax - ymin, 500)
+    padding_x = width * 0.08
+    padding_y = height * 0.08
+    xmin, xmax = xmin - padding_x, xmax + padding_x
+    ymin, ymax = ymin - padding_y, ymax + padding_y
+
+    image_width, image_height = 1200, 800
+    target_aspect = image_width / image_height
+    bounds_aspect = (xmax - xmin) / (ymax - ymin)
+    if bounds_aspect < target_aspect:
+        extra_width = (ymax - ymin) * target_aspect - (xmax - xmin)
+        xmin -= extra_width / 2
+        xmax += extra_width / 2
+    else:
+        extra_height = (xmax - xmin) / target_aspect - (ymax - ymin)
+        ymin -= extra_height / 2
+        ymax += extra_height / 2
+
+    response = requests.get(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export",
+        params={
+            "bbox": f"{xmin},{ymin},{xmax},{ymax}",
+            "bboxSR": 3857,
+            "imageSR": 3857,
+            "size": f"{image_width},{image_height}",
+            "format": "png32",
+            "transparent": "false",
+            "f": "image",
+        },
+        timeout=45,
+    )
+    response.raise_for_status()
+    satellite_image = mpimg.imread(BytesIO(response.content), format="png")
+
+    output_dir = os.path.dirname(os.path.abspath(output_image))
+    os.makedirs(output_dir, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(12, 8), dpi=100)
+    try:
+        ax.imshow(
+            satellite_image,
+            extent=(xmin, xmax, ymin, ymax),
+            origin="upper",
+            aspect="auto",
+            zorder=0,
+        )
+        for segment in track_segments:
+            route_x, route_y = zip(*(_mercator_coordinates(lon, lat) for lon, lat in segment))
+            ax.plot(route_x, route_y, color="white", linewidth=5, alpha=0.9, zorder=2)
+            ax.plot(route_x, route_y, color="#0757b8", linewidth=2.8, zorder=3)
+
+        for number, lon, lat in footprint_points:
+            x, y = _mercator_coordinates(lon, lat)
+            ax.scatter(
+                x,
+                y,
+                s=260,
+                marker="o",
+                facecolor="#f8fbff",
+                edgecolor="#073b70",
+                linewidth=2.5,
+                zorder=4,
+            )
+            ax.annotate(
+                str(number),
+                (x, y),
+                ha="center",
+                va="center",
+                color="#073b70",
+                fontsize=8,
+                fontweight="bold",
+                zorder=5,
+            )
+
+        ax.text(
+            0.99,
+            0.015,
+            "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            color="white",
+            fontsize=6,
+            bbox={"facecolor": "black", "alpha": 0.6, "pad": 3, "edgecolor": "none"},
+            zorder=6,
+        )
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_axis_off()
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        fig.savefig(
+            output_image,
+            dpi=100,
+            bbox_inches=None,
+            pad_inches=0,
+            pil_kwargs={"quality": 90, "optimize": True},
+        )
+    finally:
+        plt.close(fig)
+
+    print(f"  - Saved satellite route map: {output_image}")
+    return output_image
+
+
 def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
     """! @brief Map a footprint to the GPX waypoint fields used as Pelican metadata.
     Every exported metadata field except `desc` (the footprint text, used as page body)
@@ -747,6 +913,13 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         else:
             trip_image = image_path
 
+    trip_map = ""
+    route_map_path = str(trip.get("route_map") or "").strip()
+    if route_map_path:
+        if not os.path.isabs(route_map_path):
+            route_map_path = os.path.join(profile_dir, route_map_path)
+        trip_map = _copy_media([route_map_path], rst_trip_dir)[0]
+
     companion_images = []
     for companion in trip.get("companions") or []:
         picture = str(companion.get("picture") or companion.get("avatar") or "").strip()
@@ -795,8 +968,8 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
             Description=trip.get("description", ""),
             Owner=user_data.get("name") or uid,
             TripImage=trip_image,
+            TripMap=trip_map,
             Companions=";".join(companion_images),
-            Template="findpenguins_trip",
         ),
         "",
         _rst_heading(trip_title),
