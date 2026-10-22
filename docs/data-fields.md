@@ -177,6 +177,7 @@ If the button or popup is not available, an empty dictionary is returned and the
 - Link texts are normalised to `https://…`.
 - `<br>` becomes a newline and `.double-break` a blank line; whitespace is compacted.
 - In `text-private`, a line that is a valid `http(s)` URL (optionally prefixed with `[search text]`) is removed from the text and stored in `references` as `(search_text, url)`.
+- URLs written to footprint `Reference` metadata and generated text links are percent-encoded for non-ASCII and unsafe URL characters.
 
 ### 5.5 Coordinates from GPX (`apply_gpx_coordinates`)
 

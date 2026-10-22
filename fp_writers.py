@@ -14,7 +14,7 @@ import re
 import requests
 import shutil
 import xml.etree.ElementTree as ET
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from functools import lru_cache
 from math import radians, sin, cos, sqrt, atan2, isfinite
 
@@ -448,6 +448,11 @@ def _references_by_search(references):
     return result
 
 
+def _encode_url(url):
+    """Encode URL characters that are not safe in an ASCII URL."""
+    return quote(str(url or ""), safe=":/?#[]@!$&()*+,;=%").replace("_", "%5F")
+
+
 def _text_with_html_references(text, references):
     """! @brief Replace reference search text occurrences with HTML links."""
     text = str(text or "")
@@ -469,7 +474,7 @@ def _text_with_html_references(text, references):
     for match in pattern.finditer(text):
         parts.append(_esc(text[last_end:match.start()]))
         search_text, reference_url = references_by_search[match.group(0).casefold()]
-        url = html.escape(reference_url, quote=True)
+        url = html.escape(_encode_url(reference_url), quote=True)
         parts.append(f'<a href="{url}" target="_blank" rel="noopener">{_esc(search_text)}</a>')
         last_end = match.end()
     parts.append(_esc(text[last_end:]))
@@ -834,7 +839,7 @@ def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
     @return Dictionary of metadata name -> value.
     """
     references = ", ".join(
-        f"{search_text}|{url}" if search_text else str(url)
+        f"{search_text}|{_encode_url(url)}" if search_text else _encode_url(url)
         for search_text, url in footprint.get("references", [])
     )
     lat = str(footprint.get("lat", "")).strip()
@@ -909,7 +914,7 @@ def _text_with_rst_references(text, references):
     for match in pattern.finditer(text):
         parts.append(_rst_text(text[last_end:match.start()]))
         search_text, url = references_by_search[match.group(0).casefold()]
-        escaped_url = url.replace(">", "%3E")
+        escaped_url = _encode_url(url).replace(">", "%3E")
         parts.append(f"`{_rst_text(search_text)} <{escaped_url}>`_")
         last_end = match.end()
     parts.append(_rst_text(text[last_end:]))
@@ -1025,47 +1030,6 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
             "",
         ]
         _write_rst(os.path.join(footprint_dir, "footprint.rst"), "\n".join(content))
-
-
-def build_user_rst(content_dir, profile_dir, user_data, trips):
-    """! @brief Build a Pelican-compatible reStructuredText user landing page."""
-    uid = str(user_data.get("uid", "")).strip()
-    name = str(user_data.get("name") or uid).strip()
-    rst_user_dir = os.path.join(content_dir, uid)
-    print(f"  - Building user reStructuredText [{rst_user_dir}]...")
-
-    content = [
-        _rst_metadata(Title=name, Slug=uid),
-        "",
-        _rst_heading(name),
-        "",
-    ]
-    if user_data.get("picture"):
-        picture_path = str(user_data["picture"])
-        if not picture_path.startswith(("http://", "https://")):
-            picture_path = os.path.join(profile_dir, picture_path)
-            picture_path = _copy_media([picture_path], rst_user_dir)[0]
-        content.extend([".. image:: " + picture_path, f"   :alt: {_rst_text(name)}", ""])
-    if user_data.get("location"):
-        content.extend([f"**Location:** {_rst_text(user_data['location'])}", ""])
-    if user_data.get("website"):
-        website = str(user_data["website"]).strip()
-        content.extend([f"`{_rst_text(website)} <{website}>`_", ""])
-    if user_data.get("bio"):
-        content.extend([_rst_text(user_data["bio"]).strip(), ""])
-
-    content.extend([_rst_heading("Trips", "-"), ""])
-    for trip in trips:
-        slug = str(trip.get("slug", "")).strip()
-        if not slug:
-            continue
-        title = str(trip.get("title") or slug).strip()
-        period = str(trip.get("period", "")).strip()
-        trip_url = f"{{filename}}/pages/{uid}/{slug}/trip.rst"
-        link = f"`{_rst_text(title)} <{trip_url}>`_"
-        content.append(f"* {link}" + (f" — {_rst_text(period)}" if period else ""))
-    content.append("")
-    _write_rst(os.path.join(rst_user_dir, "user.rst"), "\n".join(content))
 
 
 def build_findpenguins_rst(content_dir, profiles_data):

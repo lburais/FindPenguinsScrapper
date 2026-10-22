@@ -27,7 +27,6 @@ from fp_writers import (
     build_user_html,
     build_global_html,
     build_trip_rst,
-    build_user_rst,
     build_findpenguins_rst,
 )
 
@@ -304,7 +303,9 @@ def generate_rst_outputs(content_dir, output, profiles_data):
             trip_dir = os.path.join(profile_dir, trip["slug"])
             build_trip_rst(content_dir, trip_dir, user_data, trip, trip.get("footprints", []))
 
-        build_user_rst(content_dir, profile_dir, user_data, trips)
+        legacy_user_page = os.path.join(content_dir, user_data["uid"], "user.rst")
+        if os.path.isfile(legacy_user_page):
+            os.remove(legacy_user_page)
     build_findpenguins_rst(content_dir, profiles_data)
 
 

@@ -95,7 +95,7 @@ For each trip:
 
 ## Pelican Source Exports
 
-- `--rst PATH` generates profile and footprint pages plus trip-metadata RST records used by the
+- `--rst PATH` generates footprint pages plus trip-metadata RST records used by the
   all-trips index. The separate per-trip map page/template is removed.
 - When a canonical `findpenguins.rst` already exists in the parent of the RST output directory,
   the scraper skips creating a nested duplicate index.

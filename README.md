@@ -118,28 +118,27 @@ Sans l'une de ces options, seuls les exports GPX et XML sont générés.
 Une fois le scraping terminé, le dossier de sortie est structuré de manière étanche et autonome :
 
 ```text
-output/
-├── pseudo_findpenguins/
-│   ├── pseudo_findpenguins.xml # Index XML complet du profil
-│   ├── index.html              # Page d'accueil du profil (Style étagère de livres)
-│   ├── voyage-islande.gpx      # Fichier GPX du parcours avec waypoints enrichis
-│   └── voyage-islande/         # Livre numérique dédié au voyage
-│       ├── index.html          # Sommaire chronologique et carte globale du voyage
-│       ├── etape_1.html        # Récit, carte Leaflet et photos de l'étape 1
-│       ├── etape_2.html
-│       ├── img_12345_pic.jpg   # Photos téléchargées localement
-│       └── vid_67890_mov.mp4   # Vidéos téléchargées localement
-└── content/
-    └── pages/                  # Sources reStructuredText (option --rst) Pelican
-        └── pseudo_findpenguins/
-            ├── user.rst
-            └── voyage-islande/
-                ├── trip.rst
-                └── footprint_1/
-                    ├── footprint.rst
-                    ├── map_country.png
-                    ├── img_12345_pic.jpg
-                    └── vid_67890_mov.mp4
+output/                         # Sources (option --output) 
+└── pseudo_findpenguins/
+    ├── pseudo_findpenguins.xml # Index XML complet du profil
+    ├── index.html              # Page d'accueil du profil (Style étagère de livres)
+    ├── voyage-islande.gpx      # Fichier GPX du parcours avec waypoints enrichis
+    └── voyage-islande/         # Livre numérique dédié au voyage
+        ├── index.html          # Sommaire chronologique et carte globale du voyage
+        ├── etape_1.html        # Récit, carte Leaflet et photos de l'étape 1
+        ├── etape_2.html
+        ├── img_12345_pic.jpg   # Photos téléchargées localement
+        └── vid_67890_mov.mp4   # Vidéos téléchargées localement
+content/
+└── pages/                      # Sources reStructuredText (option --rst) Pelican
+    └── pseudo_findpenguins/
+        └── voyage-islande/
+            ├── trip.rst
+            └── footprint_1/
+                ├── footprint.rst
+                ├── map_country.png
+                ├── img_12345_pic.jpg
+                └── vid_67890_mov.mp4
 ```
 
 ---
