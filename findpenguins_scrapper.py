@@ -36,7 +36,17 @@ from fp_writers import (
 # ##############################################################################################
 
 
-def process_profile(profile_id, username, password, output, trip_slug, elevation, save_html):
+def process_profile(
+    profile_id,
+    username,
+    password,
+    output,
+    trip_slug,
+    elevation,
+    save_html,
+    map_background="transparent",
+    show_footprint_bubbles=False,
+):
     """! @brief Run end-to-end scraping workflow for one profile.
     @param profile_id Profile ID to scrape.
     @param username Username for authentication.
@@ -45,6 +55,8 @@ def process_profile(profile_id, username, password, output, trip_slug, elevation
     @param trip_slug Optional slug of the only trip to scrape.
     @param elevation Whether to adjust track elevations.
     @param save_html Whether to save downloaded HTML for debugging.
+    @param map_background Background for the generated trip route map.
+    @param show_footprint_bubbles Whether to add footprint markers to the map.
     @return Tuple containing profile data and its scraped trips.
     @exception RuntimeError Raised when requested single trip slug is not found.
     """
@@ -123,9 +135,15 @@ def process_profile(profile_id, username, password, output, trip_slug, elevation
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
 
                 build_trip_gpx(trip_gpx, user_data, trip, footprints, elevation)
-                route_map = os.path.join(trip_dir, "map_trip.jpg")
+                route_map = os.path.join(trip_dir, "map_trip.png")
                 try:
-                    if save_trip_route_map(trip_gpx, footprints, route_map):
+                    if save_trip_route_map(
+                        trip_gpx,
+                        footprints,
+                        route_map,
+                        background=map_background,
+                        show_footprint_bubbles=show_footprint_bubbles,
+                    ):
                         trip["route_map"] = os.path.relpath(route_map, output_dir)
                 except (OSError, ET.ParseError, ValueError, requests.RequestException) as exc:
                     print(f"  - WARNING: unable to create satellite route map for {trip['title']}: {exc}")
@@ -160,7 +178,17 @@ def process_profile(profile_id, username, password, output, trip_slug, elevation
 # scrapper
 # ##############################################################################################
 
-def scrapper(profile, profile_name, credentials, output, trip_slug, elevation, save_html):
+def scrapper(
+    profile,
+    profile_name,
+    credentials,
+    output,
+    trip_slug,
+    elevation,
+    save_html,
+    map_background="transparent",
+    show_footprint_bubbles=False,
+):
     """! @brief Run scraping workflow for one or more profiles.
     @param profile Profile triplets supplied directly on the command line.
     @param profile_name Optional credential profile names to scrape.
@@ -169,6 +197,8 @@ def scrapper(profile, profile_name, credentials, output, trip_slug, elevation, s
     @param trip_slug Optional slug of the only trip to scrape.
     @param elevation Whether to adjust track elevations.
     @param save_html Whether to save downloaded HTML for debugging.
+    @param map_background Background for the generated trip route map.
+    @param show_footprint_bubbles Whether to add footprint markers to the map.
     @return List of (user_data, trips) tuples for successfully scraped profiles.
     """
     # Parse profile triplets (id, username, password)
@@ -206,6 +236,8 @@ def scrapper(profile, profile_name, credentials, output, trip_slug, elevation, s
                 trip_slug,
                 elevation,
                 save_html,
+                map_background,
+                show_footprint_bubbles,
             )
             if result is not None:
                 collected.append(result)
@@ -328,6 +360,17 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
     parser.add_argument("--no-elevation", dest="elevation", action="store_false", default=True, help="Skip track elevation adjustment (enabled by default)")
     parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
+    parser.add_argument(
+        "--trip-map-background",
+        choices=("transparent", "satellite", "street"),
+        default="transparent",
+        help="Trip route map background (default: transparent)",
+    )
+    parser.add_argument(
+        "--trip-map-footprint-bubbles",
+        action="store_true",
+        help="Draw numbered footprint bubbles on trip route maps",
+    )
     parser.add_argument("--html", metavar="PATH", help="Generate HTML travel book pages under PATH (default: --output)")
     parser.add_argument("--rst", metavar="PATH", help="Generate Pelican reStructuredText pages under PATH")
 
@@ -353,6 +396,8 @@ if __name__ == "__main__":
         arguments.trip,
         arguments.elevation,
         arguments.save_html,
+        arguments.trip_map_background,
+        arguments.trip_map_footprint_bubbles,
     )
     if arguments.html is not None:
         generate_html_outputs(arguments.output, profiles_data, arguments.html)

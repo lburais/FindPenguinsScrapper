@@ -60,26 +60,6 @@ def _add_trip_details(parent, trip):
             add_text_element(transport_el, "distance", transport.get("distance", ""), namespace=None)
 
 
-def _insights_lines(insights, bullet, text):
-    """! @brief Build list lines describing trip details for RST output.
-    @param insights Trip dictionary holding the detail fields (may be empty).
-    @param bullet List bullet marker.
-    @param text Text-escaping function.
-    @return List of lines.
-    """
-    insights = insights or {}
-    lines = []
-    if insights.get("description"):
-        lines.append(f"{bullet} **Description:** {text(insights['description'])}")
-    if insights.get("countries"):
-        lines.append(f"{bullet} **Countries:** {text(', '.join(f"{c.get('flag', '')} {c.get('name', '')}".strip() for c in insights['countries']))}")
-    if insights.get("distance"):
-        lines.append(f"{bullet} **Distance:** {text(insights['distance'])} km")
-    for transport in insights.get("transports") or []:
-        lines.append(f"{bullet} **{text(transport.get('name', '').capitalize())}:** {text(transport.get('distance', ''))} km")
-    return lines
-
-
 def distance_meters(lat1, lon1, lat2, lon2):
     """! @brief Compute great-circle distance between two coordinates in meters.
     @param lat1 First latitude.
@@ -276,6 +256,7 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints, elevation):
             "km",
             "is_current",
             "url",
+            "route_map",
         ] + TRIP_DETAIL_KEYS:
             continue
         print(f"    - trip[{key}] : {value}")
@@ -399,7 +380,7 @@ def build_user_xml(user_data, trips):
     for trip in trips:
         trip_el = ET.SubElement(trips_el, "trip")
         for key, value in trip.items():
-            if key in ["companions", "footprints", "gpx", "period", "km", "is_current"] + TRIP_DETAIL_KEYS:
+            if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "route_map"] + TRIP_DETAIL_KEYS:
                 continue
             print(f"    - trip[{key}] : {value}")
             add_text_element(trip_el, key, value, namespace=None)
@@ -648,15 +629,30 @@ def _mercator_coordinates(lon, lat):
     return x, y
 
 
-def save_trip_route_map(gpx_path, footprints, output_image):
-    """! @brief Save a satellite route map with numbered footprint bubbles.
+def save_trip_route_map(
+    gpx_path,
+    footprints,
+    output_image,
+    background="transparent",
+    show_footprint_bubbles=False,
+):
+    """! @brief Save a route map with an optional background and footprint bubbles.
     @param gpx_path GPX containing the trip route track.
     @param footprints Footprints to mark on the map.
     @param output_image Destination image path.
+    @param background Map background: transparent, satellite, or street.
+    @param show_footprint_bubbles Whether to draw numbered footprint markers.
     @return Destination image path, or None when no route track/footprints exist.
     """
     import matplotlib.image as mpimg
     import matplotlib.pyplot as plt
+
+    if background not in {"transparent", "satellite", "street"}:
+        raise ValueError(
+            "background must be one of: transparent, satellite, street"
+        )
+    if os.path.splitext(output_image)[1].lower() != ".png":
+        raise ValueError("trip route maps must be saved as PNG images")
 
     if not os.path.isfile(gpx_path):
         print(f"  - WARNING: route map skipped; GPX file not found: {gpx_path}")
@@ -693,7 +689,8 @@ def save_trip_route_map(gpx_path, footprints, output_image):
             footprint_points.append((index, lon, lat))
 
     all_points = [point for segment in track_segments for point in segment]
-    all_points.extend((lon, lat) for _, lon, lat in footprint_points)
+    if show_footprint_bubbles:
+        all_points.extend((lon, lat) for _, lon, lat in footprint_points)
     projected = [_mercator_coordinates(lon, lat) for lon, lat in all_points]
     xs, ys = zip(*projected)
     xmin, xmax = min(xs), max(xs)
@@ -717,73 +714,93 @@ def save_trip_route_map(gpx_path, footprints, output_image):
         ymin -= extra_height / 2
         ymax += extra_height / 2
 
-    response = requests.get(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export",
-        params={
-            "bbox": f"{xmin},{ymin},{xmax},{ymax}",
-            "bboxSR": 3857,
-            "imageSR": 3857,
-            "size": f"{image_width},{image_height}",
-            "format": "png32",
-            "transparent": "false",
-            "f": "image",
-        },
-        timeout=45,
-    )
-    response.raise_for_status()
-    satellite_image = mpimg.imread(BytesIO(response.content), format="png")
+    map_image = None
+    if background != "transparent":
+        service = (
+            "World_Imagery" if background == "satellite" else "World_Street_Map"
+        )
+        response = requests.get(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            f"{service}/MapServer/export",
+            params={
+                "bbox": f"{xmin},{ymin},{xmax},{ymax}",
+                "bboxSR": 3857,
+                "imageSR": 3857,
+                "size": f"{image_width},{image_height}",
+                "format": "png32",
+                "transparent": "false",
+                "f": "image",
+            },
+            timeout=45,
+        )
+        response.raise_for_status()
+        map_image = mpimg.imread(BytesIO(response.content), format="png")
 
     output_dir = os.path.dirname(os.path.abspath(output_image))
     os.makedirs(output_dir, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(12, 8), dpi=100)
+    transparent = background == "transparent"
+    fig, ax = plt.subplots(figsize=(12, 8), dpi=100, facecolor="none" if transparent else "white")
     try:
-        ax.imshow(
-            satellite_image,
-            extent=(xmin, xmax, ymin, ymax),
-            origin="upper",
-            aspect="auto",
-            zorder=0,
-        )
+        ax.set_facecolor("none" if transparent else "white")
+        if map_image is not None:
+            ax.imshow(
+                map_image,
+                extent=(xmin, xmax, ymin, ymax),
+                origin="upper",
+                aspect="auto",
+                zorder=0,
+            )
         for segment in track_segments:
             route_x, route_y = zip(*(_mercator_coordinates(lon, lat) for lon, lat in segment))
-            ax.plot(route_x, route_y, color="white", linewidth=5, alpha=0.9, zorder=2)
-            ax.plot(route_x, route_y, color="#0757b8", linewidth=2.8, zorder=3)
+            ax.plot(route_x, route_y, color="white", linewidth=4, zorder=3)
 
-        for number, lon, lat in footprint_points:
-            x, y = _mercator_coordinates(lon, lat)
-            ax.scatter(
-                x,
-                y,
-                s=260,
-                marker="o",
-                facecolor="#f8fbff",
-                edgecolor="#073b70",
-                linewidth=2.5,
-                zorder=4,
-            )
-            ax.annotate(
-                str(number),
-                (x, y),
-                ha="center",
-                va="center",
-                color="#073b70",
-                fontsize=8,
-                fontweight="bold",
-                zorder=5,
-            )
+        if show_footprint_bubbles:
+            for number, lon, lat in footprint_points:
+                x, y = _mercator_coordinates(lon, lat)
+                ax.scatter(
+                    x,
+                    y,
+                    s=260,
+                    marker="o",
+                    facecolor="#f8fbff",
+                    edgecolor="#073b70",
+                    linewidth=2.5,
+                    zorder=4,
+                )
+                ax.annotate(
+                    str(number),
+                    (x, y),
+                    ha="center",
+                    va="center",
+                    color="#073b70",
+                    fontsize=8,
+                    fontweight="bold",
+                    zorder=5,
+                )
 
-        ax.text(
-            0.99,
-            0.015,
-            "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community",
-            transform=ax.transAxes,
-            ha="right",
-            va="bottom",
-            color="white",
-            fontsize=6,
-            bbox={"facecolor": "black", "alpha": 0.6, "pad": 3, "edgecolor": "none"},
-            zorder=6,
-        )
+        if background != "transparent":
+            attribution = (
+                "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+                if background == "satellite"
+                else "Map data © Esri"
+            )
+            ax.text(
+                0.99,
+                0.015,
+                attribution,
+                transform=ax.transAxes,
+                ha="right",
+                va="bottom",
+                color="white" if background == "satellite" else "#333",
+                fontsize=6,
+                bbox={
+                    "facecolor": "black" if background == "satellite" else "white",
+                    "alpha": 0.6,
+                    "pad": 3,
+                    "edgecolor": "none",
+                },
+                zorder=6,
+            )
         ax.set_xlim(xmin, xmax)
         ax.set_ylim(ymin, ymax)
         ax.set_axis_off()
@@ -793,12 +810,17 @@ def save_trip_route_map(gpx_path, footprints, output_image):
             dpi=100,
             bbox_inches=None,
             pad_inches=0,
-            pil_kwargs={"quality": 90, "optimize": True},
+            transparent=transparent,
+            pil_kwargs={"optimize": True},
         )
     finally:
         plt.close(fig)
 
-    print(f"  - Saved satellite route map: {output_image}")
+    stale_marker_path = os.path.splitext(output_image)[0] + ".json"
+    if os.path.isfile(stale_marker_path):
+        os.remove(stale_marker_path)
+
+    print(f"  - Saved {background} route map: {output_image}")
     return output_image
 
 
@@ -900,7 +922,6 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
     trip_slug = str(trip.get("slug", "")).strip()
     trip_title = str(trip.get("title") or trip_slug).strip()
     rst_trip_dir = os.path.join(content_dir, uid, trip_slug)
-    source_trip_path = f"pages/{uid}/{trip_slug}"
     print(f"  - Building trip reStructuredText [{rst_trip_dir}]...")
 
     profile_dir = os.path.dirname(trip_dir)
@@ -945,10 +966,16 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
     insight_tags = [
         str(country.get("name", "")).strip()
         for country in trip.get("countries") or []
-    ] + [
-        str(transport.get("name", "")).strip()
-        for transport in trip.get("transports") or []
     ]
+    transport_details = []
+    for transport in trip.get("transports") or []:
+        name = str(transport.get("name", "")).strip()
+        distance = str(transport.get("distance", "")).strip()
+        detail = f"{name} {distance} km".strip() if distance else name
+        if detail:
+            transport_details.append(detail)
+    if transport_details:
+        insight_tags.append(f"transport: {'; '.join(transport_details)}")
     for tag in insight_tags:
         if tag and tag.casefold() not in known_tags:
             trip_tags.append(tag)
@@ -971,28 +998,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
             TripMap=trip_map,
             Companions=";".join(companion_images),
         ),
-        "",
-        _rst_heading(trip_title),
-        "",
     ]
-    for label, value in (
-        ("Period", trip.get("period")),
-        ("Duration", trip.get("days")),
-        ("Distance", trip.get("km")),
-    ):
-        if value:
-            chapters.extend([f"**{label}:** {_rst_text(value)}", ""])
-
-    if any(trip.get(key) for key in TRIP_DETAIL_KEYS):
-        chapters.extend([_rst_heading("Insights", "-"), ""])
-        chapters.extend(_insights_lines(trip, "*", _rst_text))
-        chapters.append("")
-    chapters.extend([_rst_heading("Footprints", "-"), ""])
-    for index, footprint in enumerate(footprints, start=1):
-        title = str(footprint.get("title") or f"Étape {index}").strip()
-        url = f"{{filename}}/{source_trip_path}/footprint_{index}/footprint.rst"
-        chapters.append(f"* `{_rst_text(title)} <{url}>`_")
-    chapters.append("")
     _write_rst(os.path.join(rst_trip_dir, "trip.rst"), "\n".join(chapters))
 
     for index, footprint in enumerate(footprints, start=1):
@@ -1029,7 +1035,7 @@ def build_user_rst(content_dir, profile_dir, user_data, trips):
     print(f"  - Building user reStructuredText [{rst_user_dir}]...")
 
     content = [
-        _rst_metadata(Title=name, Slug=uid, Template="findpenguins_user"),
+        _rst_metadata(Title=name, Slug=uid),
         "",
         _rst_heading(name),
         "",
@@ -1089,26 +1095,36 @@ def build_findpenguins_rst(content_dir, profiles_data):
         reverse=True,
     )
 
-    content = [
-        _rst_metadata(Title="Nos Carnets de Voyage", Slug="findpenguins", Template="findpenguins", Save_as= "findpenguins.html"),
-        "",
-        _rst_heading("FindPenguins"),
-        "",
-        _rst_heading("Trips", "-"),
-        "",
-    ]
-    for start_date, profile_name, uid, slug, trip in trips_with_profiles:
-        title = str(trip.get("title") or slug).strip()
-        trip_url = f"{{filename}}/pages/{uid}/{slug}/trip.rst"
-        link = f"`{_rst_text(title)} <{trip_url}>`_"
-        date_label = start_date.isoformat() if start_date else str(trip.get("period", "")).strip()
-        details = [value for value in (date_label, _rst_text(profile_name)) if value]
-        content.append(f"* {link}" + (f" — {' — '.join(details)}" if details else ""))
-    content.append("")
+    # content = [
+    #     _rst_metadata(Title="Nos Carnets de Voyage", Slug="findpenguins", Template="findpenguins", Save_as= "findpenguins.html"),
+    #     "",
+    #     _rst_heading("FindPenguins"),
+    #     "",
+    #     _rst_heading("Trips", "-"),
+    #     "",
+    # ]
+    # for start_date, profile_name, uid, slug, trip in trips_with_profiles:
+    #     title = str(trip.get("title") or slug).strip()
+    #     trip_url = f"{{filename}}/pages/{uid}/{slug}/trip.rst"
+    #     link = f"`{_rst_text(title)} <{trip_url}>`_"
+    #     date_label = start_date.isoformat() if start_date else str(trip.get("period", "")).strip()
+    #     details = [value for value in (date_label, _rst_text(profile_name)) if value]
+    #     content.append(f"* {link}" + (f" — {' — '.join(details)}" if details else ""))
+    # content.append("")
 
-    output_path = os.path.join(content_dir, "findpenguins.rst")
-    _write_rst(output_path, "\n".join(content))
-    print(f"  - Building FindPenguins index [{output_path}]...")
+    # parent_index_path = os.path.join(
+    #     os.path.dirname(os.path.abspath(content_dir)), "findpenguins.rst"
+    # )
+    # if os.path.isfile(parent_index_path):
+    #     print(
+    #         "  - Skipping nested FindPenguins index; canonical page already exists: "
+    #         f"{parent_index_path}"
+    #     )
+    #     return
+
+    # output_path = os.path.join(content_dir, "findpenguins.rst")
+    # _write_rst(output_path, "\n".join(content))
+    # print(f"  - Building FindPenguins index [{output_path}]...")
 
 
 def build_trip_html(trip_dir, trip, footprints):
@@ -1379,7 +1395,7 @@ def build_merged_xml(profiles_data):
         for trip in trips:
             trip_el = ET.SubElement(trips_el, "trip")
             for key, value in trip.items():
-                if key in ["companions", "footprints", "gpx", "period", "km", "is_current"] + TRIP_DETAIL_KEYS:
+                if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "route_map"] + TRIP_DETAIL_KEYS:
                     continue
                 add_text_element(trip_el, key, value, namespace=None)
 

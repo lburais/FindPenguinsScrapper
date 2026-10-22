@@ -95,12 +95,19 @@ For each trip:
 
 ## Pelican Source Exports
 
-- `--rst PATH` generates a profile page, one trip page, and one page per footprint.
-- Each trip page gets a `map_trip.jpg` generated from its GPX track with an Esri World Imagery
-  satellite background and numbered footprint markers. The full track and footprint coordinates
-  determine the map bounds; Esri imagery attribution is included on the image.
-- The trip-card template uses this route map as the card background, falling back to the trip
-  cover image when no route map can be generated.
+- `--rst PATH` generates profile and footprint pages plus trip-metadata RST records used by the
+  all-trips index. The separate per-trip map page/template is removed.
+- When a canonical `findpenguins.rst` already exists in the parent of the RST output directory,
+  the scraper skips creating a nested duplicate index.
+- Each trip gets a `map_trip.png` route image generated from its GPX track with a 2px white
+  route, displayed at one-quarter width in the upper-right of its Carnets card over the trip
+  cover image.
+- Trip map backgrounds are configurable with `--trip-map-background`: `transparent` (default),
+  `satellite`, or `street`. `--trip-map-footprint-bubbles` optionally draws numbered footprint
+  bubbles; it is disabled by default.
+- Trip RST records keep the index metadata but omit standalone period/duration/distance lines,
+  insights and footprint links. Country names remain tags, and transport distances are combined
+  into one transport tag.
 - Both formats use Pelican `{filename}` links and copy profile pictures and footprint media beside their pages.
 - reStructuredText uses field-list metadata and native image/link syntax; videos are included through a raw HTML directive.
 

@@ -101,8 +101,10 @@ XML/GPX output (trip metadata extensions):
 </transports>
 ```
 
-`trip.rst` lists the insights in its content, and adds each country and transport name
-to Pelican's `Tags` metadata (alongside the `findpenguins` and `travel` tags). Duplicate
+`trip.rst` keeps trip summary metadata for the all-trips index but omits standalone
+period/duration/distance lines, the insights section and footprint links. Country names
+remain individual Pelican tags, while all transport modes and their kilometer values are
+combined into one `transport` tag (alongside the `findpenguins` and `travel` tags). Duplicate
 tag names are omitted without regard to case.
 
 `parse_trip_insights` also returns the companions from "Travelers in this trip"
