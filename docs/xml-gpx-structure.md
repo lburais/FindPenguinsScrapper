@@ -47,9 +47,12 @@ Trip fields intentionally excluded from XML (internal processing only):
 - `period`
 - `km`
 - `is_current`
+- `route_map`
+- trip insight details (`description`, `countries`, `distance`, `transports`)
 
-`days` (total number of trip days) is written as `<days>` in the trip XML and in the GPX trip
-metadata extensions.
+`days` (total number of trip days) is written as `<days>` in the profile XML and GPX trip metadata
+extensions. Trip insight details are represented in GPX metadata extensions, not duplicated in the
+profile XML.
 
 ## 2) GPX Structure
 
@@ -68,7 +71,7 @@ GPX root:
 `<metadata>` contains:
 
 - `<name>`: trip title
-- `<desc>`: trip period/description (when present)
+- `<desc>`: trip period when the GPX file is first created
 - `<author>`
   - `<name>`: profile name
   - `<email>`: login email when provided
@@ -76,10 +79,15 @@ GPX root:
 - `<link href="https://findpenguins.com/<uid>/trip/<slug>"/>`
 - `<extensions>` (trip-scoped custom metadata)
   - `<slug>`
-  - `<title>`
+  - `<start_date>`: earliest valid footprint date, when available
   - `<uid>`
+  - other available non-detail trip fields, such as `<days>` and `<image>`
   - `<description>`, `<countries><country><name>/<flag>`, `<distance>` and `<transports><transport><name>/<distance>`
   - repeated `<companion>` with `<uid>`, `<name>` and `<picture>` sub-elements
+
+The trip title is stored in the standard GPX `<metadata><name>` element when a GPX file is first
+created; it is not duplicated as a custom `<title>` extension. The period is stored in
+`<metadata><desc>` when the file is first created.
 
 ## 2.2 Waypoints (`wpt`)
 
@@ -106,6 +114,7 @@ Waypoint extensions (`<wpt><extensions>`) may include:
 - `<text-private>`
 - repeated `<reference>` elements, each containing an optional `<search>` and a `<url>`
 - repeated `<photo>` with local file path
+- repeated `<video>`, `<gpx>` and `<pdf>` for downloaded media and attachments
 - `<point lat="..." lon="..."/>` (nearest route point, custom extension)
 
 ## 2.3 Track Elements (`trk`)
@@ -114,7 +123,8 @@ Behavior:
 
 - If an official travel-route GPX is downloaded, its track data is preserved.
 - Existing `trk` nodes are temporarily removed during waypoint rebuild and appended back unchanged (except optional elevation enrichment).
-- `trkpt` may receive or update `<ele>` based on external elevation API results.
+- `trkpt` may receive or update `<ele>` from OpenTopoData SRTM90m when elevation enrichment is
+  enabled (default); `--no-elevation` disables it.
 
 ## 3) Ordering Rules in GPX
 
@@ -132,7 +142,7 @@ This ordering keeps narrative waypoints clearly visible while preserving route g
 - Repeated fields:
   - XML: `<trip><companion>`
   - GPX metadata extensions: `<companion>`
-  - GPX waypoint extensions: `<reference>`, `<photo>`, `<video>`
+  - GPX waypoint extensions: `<reference>`, `<photo>`, `<video>`, `<gpx>`, `<pdf>`
 
 ## 5) Compatibility Notes
 

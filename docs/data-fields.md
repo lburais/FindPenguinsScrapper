@@ -101,11 +101,11 @@ XML/GPX output (trip metadata extensions):
 </transports>
 ```
 
-`trip.rst` keeps trip summary metadata for the all-trips index but omits standalone
-period/duration/distance lines, the insights section and footprint links. Country names
-remain individual Pelican tags, while all transport modes and their kilometer values are
-combined into one `transport` tag (alongside the `findpenguins` and `travel` tags). Duplicate
-tag names are omitted without regard to case.
+`trip.rst` keeps trip summary metadata for a consuming site's trip index. It contains no body
+sections for standalone period/duration/distance, insights, or footprint links. Country names
+are emitted as tags, and transport modes with kilometer values are combined in the generated RST
+metadata as a `transport:` value. The scraper itself does not generate a profile page or global
+FindPenguins index; a consuming site builds its own index from these trip pages.
 
 `parse_trip_insights` also returns the companions from "Travelers in this trip"
 (`#FollowersList li.follower`): `uid` (link `href`), `name` (`.name`) and `avatar` (`.ppBox img` `src`, made
@@ -209,10 +209,10 @@ Built in [fp_writers.py](../fp_writers.py) from the data above:
 
 | Output | Fields |
 |--------|--------|
-| `<profile>.xml` | Profile fields (`uid`, `name`, `bio`, `location`, `website`, `picture`, `email`); per trip `slug`, `title`, `days`, `url`, `gpx`, `companion` uids. `period`, `km`, `is_current` and the companion details are not written. |
-| `<slug>.gpx` | Waypoint: `lat`, `lon`, `name`=title, `desc`=text, `ele`=altitude, `link`=url; extensions `date`, `day`, `weather`, `temperature`, `overnights`, `flag`, `country`, `city`, `text-private`, `reference`, `photo`, `video`, `point`. Metadata: trip `title`, `period` (as `desc`, only for a new GPX), author name/email/website, trip link, `uid`, `companion`. |
-| RST (Pelican) | Footprint pages: every GPX waypoint field is a Pelican metadata tag, except `desc`, which is the page body (the footprint text, with references turned into links). See below. |
-| HTML | Rendered from the same dictionaries. |
+| `<profile>.xml` | Profile fields (`uid`, `name`, `bio`, `location`, `website`, `picture`, `email`); per trip `slug`, `title`, `days`, `url`, `gpx`, and companion `uid`/`name`/`picture`. Trip `period`, `km`, `is_current`, route-map path and insight details are omitted. |
+| `<slug>.gpx` | Waypoint: `lat`, `lon`, `name`=title, `desc`=text, `ele`=footprint altitude, `link`=url; extensions `date`, `day`, `weather`, `temperature`, `overnights`, `flag`, `country`, `city`, `text-private`, repeated `reference`, `photo`, `video`, `gpx`, `pdf`, and matched `point`. Metadata: standard trip `name`, initial `desc`=period, author name/email/website, trip link, and extensions including `start_date`, `slug`, `uid`, `days`, trip details and companions. |
+| RST (Pelican) | One `trip.rst` per trip and one `footprint.rst` per footprint. Footprint metadata is based on GPX waypoint fields except `desc`, which is the page body. The export also copies photos, videos, attachments, trip cover/route maps and country maps beside the source pages. |
+| HTML (`--html PATH`) | Profile and trip-book landing pages, trip indexes and footprint pages, rendered from the scraped dictionaries. |
 
 ### Pelican footprint metadata (`footprint.rst`)
 
@@ -230,6 +230,7 @@ Built in [fp_writers.py](../fp_writers.py) from the data above:
 | `gpx`, `pdf` | `Gpx`, `Pdf`: copied file names separated by `, ` |
 
 `Slug`, `Category`, `Tags`, `Summary` and `Template` are also set for Pelican itself.
-`time` and `point` are only computed in the GPX and are not part of the pages.
+`time` and `point` are only computed in the GPX and are not part of the pages. The scraper does not
+write a profile RST page or a global trip-index RST page.
 
 See also [xml-gpx-structure.md](./xml-gpx-structure.md) for the exact XML layout.
