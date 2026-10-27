@@ -6,6 +6,8 @@ This script coordinates authentication, parsing, and serialization modules to
 produce one user XML index plus one GPX file per trip.
 """
 
+from urllib.parse import urljoin
+
 import argparse
 import json
 import os
@@ -13,7 +15,6 @@ import shutil
 import sys
 import xml.etree.ElementTree as ET
 import requests
-from urllib.parse import urljoin
 
 from fp_config import BASE_URL
 from fp_utils import login, create_browser_page, load_page, download_image
@@ -218,14 +219,14 @@ def scrapper(
     if not profiles:
         print("ERROR: No profile given (use --profile, --profile-name or a credentials file)")
         return []
-    
+
     # Process each profile, collecting results for merged XML
     collected = []
     for idx, (profile_id, username, password) in enumerate(profiles):
         print(f"\n{'='*60}")
         print(f"Processing profile {idx + 1}/{len(profiles)}: {profile_id}")
         print(f"{'='*60}\n")
-        
+
         try:
             result = process_profile(
                 profile_id,

@@ -52,6 +52,13 @@ git clone https://github.com/lburais/FindPenguinsParser.git
 cd FindPenguinsParser
 ```
 
+```bash
+rm -rf venv
+python3 -m venv venv
+source venv/bin/activate
+
+````
+
 ### 2. Installer les dépendances Python
 Le script s'appuie sur plusieurs bibliothèques majeures (`requests`, `beautifulsoup4`, `playwright`, `scipy`, `numpy`, `geopandas`, `matplotlib`, `shapely`) :
 ```bash
