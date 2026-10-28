@@ -1020,7 +1020,8 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
                 Date=footprint.get("date", ""),
                 Slug=f"{uid}-{trip_slug}-etape-{index}",
                 Category=trip_title,
-                Tags=", ".join(part for part in ("findpenguins", city, country) if part),
+                # Tags=", ".join(part for part in ("findpenguins", city, country) if part),
+                Tags=", ".join(part for part in ("findpenguins", country) if part),
                 Summary=location or footprint.get("weather", ""),
                 Template="findpenguins_footprint",
                 **_footprint_gpx_fields(footprint, footprint_dir, trip.get("days", "")),
@@ -1058,38 +1059,6 @@ def build_findpenguins_rst(content_dir, profiles_data):
         key=lambda item: item[0] or date.min,
         reverse=True,
     )
-
-    # content = [
-    #     _rst_metadata(Title="Nos Carnets de Voyage", Slug="findpenguins", Template="findpenguins", Save_as= "findpenguins.html"),
-    #     "",
-    #     _rst_heading("FindPenguins"),
-    #     "",
-    #     _rst_heading("Trips", "-"),
-    #     "",
-    # ]
-    # for start_date, profile_name, uid, slug, trip in trips_with_profiles:
-    #     title = str(trip.get("title") or slug).strip()
-    #     trip_url = f"{{filename}}/pages/{uid}/{slug}/trip.rst"
-    #     link = f"`{_rst_text(title)} <{trip_url}>`_"
-    #     date_label = start_date.isoformat() if start_date else str(trip.get("period", "")).strip()
-    #     details = [value for value in (date_label, _rst_text(profile_name)) if value]
-    #     content.append(f"* {link}" + (f" — {' — '.join(details)}" if details else ""))
-    # content.append("")
-
-    # parent_index_path = os.path.join(
-    #     os.path.dirname(os.path.abspath(content_dir)), "findpenguins.rst"
-    # )
-    # if os.path.isfile(parent_index_path):
-    #     print(
-    #         "  - Skipping nested FindPenguins index; canonical page already exists: "
-    #         f"{parent_index_path}"
-    #     )
-    #     return
-
-    # output_path = os.path.join(content_dir, "findpenguins.rst")
-    # _write_rst(output_path, "\n".join(content))
-    # print(f"  - Building FindPenguins index [{output_path}]...")
-
 
 def build_trip_html(trip_dir, trip, footprints):
     """! @brief Build a trip book: index.html plus one etape_N.html per footprint.
