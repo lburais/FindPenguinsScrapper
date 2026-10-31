@@ -11,6 +11,7 @@ import unicodedata
 import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
+from PIL import Image
 import xml.etree.ElementTree as ET
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
@@ -192,12 +193,28 @@ def normalize_photo_url(img_url):
     return parsed._replace(path=new_path).geturl()
 
 
+def to_webp(path):
+    """! @brief Convert an image to lossless WebP next to the source and remove the source.
+    @param path Source image path.
+    @return Path of the WebP file (unchanged when already WebP).
+    """
+    if path.lower().endswith(".webp"):
+        return path
+    webp_path = os.path.splitext(path)[0] + ".webp"
+    with Image.open(path) as image:
+        if image.mode not in ("RGB", "RGBA"):
+            image = image.convert("RGBA" if "transparency" in image.info or image.mode in ("LA", "PA") else "RGB")
+        image.save(webp_path, "WEBP", lossless=True, quality=100, method=4, exact=True)
+    os.remove(path)
+    return webp_path
+
+
 def download_image(img_url, dest_folder, prefix="img"):
     """! @brief Download one image and save it to local storage.
     @param img_url Remote image URL.
     @param dest_folder Destination directory path.
     @param prefix Filename prefix prepended to saved image name.
-    @return Absolute/relative path of the saved local file.
+    @return Path of the saved lossless WebP file.
     @exception requests.RequestException Raised on HTTP failures.
     """
 
@@ -212,6 +229,9 @@ def download_image(img_url, dest_folder, prefix="img"):
     filename = os.path.basename(parsed.path) or "image.jpg"
     local_name = f"{prefix}_{filename}"
     local_path = os.path.join(dest_folder, local_name)
+    webp_path = os.path.splitext(local_path)[0] + ".webp"
+    if os.path.exists(webp_path):
+        return webp_path
 
     resp = requests.get(img_url, headers=HEADERS, stream=True, timeout=20)
     resp.raise_for_status()
@@ -219,7 +239,7 @@ def download_image(img_url, dest_folder, prefix="img"):
         for chunk in resp.iter_content(8192):
             if chunk:
                 f.write(chunk)
-    return local_path
+    return to_webp(local_path)
 
 
 def download_video(video_url, dest_folder, prefix="vid"):

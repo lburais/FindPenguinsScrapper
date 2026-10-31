@@ -5,11 +5,9 @@ Writers in this module preserve user-requested schema semantics including
 metadata extensions, waypoint ordering, and indentation style.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 import os
-import html
-import json
 import re
 import requests
 import shutil
@@ -19,7 +17,7 @@ from functools import lru_cache
 from math import radians, sin, cos, sqrt, atan2, isfinite
 
 from fp_config import GPX_NS, XSI_NS
-from fp_utils import gpx_tag, add_text_element, format_tree
+from fp_utils import gpx_tag, add_text_element, format_tree, to_webp
 from fp_elevation import fetch_elevations
 
 
@@ -164,7 +162,7 @@ def footprint_to_waypoint(footprint):
     return waypoint
 
 
-def build_trip_gpx(gpx_path, user_data, trip, footprints, elevation):
+def build_trip_gpx(gpx_path, user_data, trip, footprints):
     """! @brief Build or update one trip GPX with metadata and footprint waypoints.
     @param gpx_path Output GPX file path.
     @param user_data Dictionary of profile-level fields.
@@ -302,17 +300,17 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints, elevation):
             track_points.append(point)
             track_point_elements.append(track_point)
 
-    if track_points and elevation:
+    if track_points:
         try:
             fetch_elevations(track_points)
             for point, track_point in zip(track_points, track_point_elements):
-                elevation = point.get("ele")
-                if elevation is None:
+                track_elevation = point.get("ele")
+                if track_elevation is None:
                     continue
                 ele_node = track_point.find(gpx_tag("ele"))
                 if ele_node is None:
                     ele_node = ET.SubElement(track_point, gpx_tag("ele"))
-                ele_node.text = str(elevation)
+                ele_node.text = str(track_elevation)
         except Exception as exc:
             print(f"  - WARNING: unable to enrich trkpt elevations: {exc}")
 
@@ -418,18 +416,6 @@ a:hover { text-decoration: underline; }
 """
 
 
-def _esc(value):
-    """! @brief HTML-escape any value as text."""
-    return html.escape(str(value or ""))
-
-
-def _write_html(path, content):
-    """! @brief Write an HTML document, creating parent folders."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-
 def _write_rst(path, content):
     """! @brief Write a reStructuredText document, creating parent folders."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -451,34 +437,6 @@ def _references_by_search(references):
 def _encode_url(url):
     """Encode URL characters that are not safe in an ASCII URL."""
     return quote(str(url or ""), safe=":/?#[]@!$&()*+,;=%").replace("_", "%5F")
-
-
-def _text_with_html_references(text, references):
-    """! @brief Replace reference search text occurrences with HTML links."""
-    text = str(text or "")
-    references_by_search = _references_by_search(references)
-    if not references_by_search:
-        return _esc(text)
-
-    labels = [
-        label
-        for label, _ in sorted(
-            references_by_search.values(), key=lambda item: len(item[0]), reverse=True
-        )
-    ]
-    pattern = re.compile(
-        "|".join(re.escape(label) for label in labels), flags=re.IGNORECASE
-    )
-    parts = []
-    last_end = 0
-    for match in pattern.finditer(text):
-        parts.append(_esc(text[last_end:match.start()]))
-        search_text, reference_url = references_by_search[match.group(0).casefold()]
-        url = html.escape(_encode_url(reference_url), quote=True)
-        parts.append(f'<a href="{url}" target="_blank" rel="noopener">{_esc(search_text)}</a>')
-        last_end = match.end()
-    parts.append(_esc(text[last_end:]))
-    return "".join(parts)
 
 
 def _copy_media(media_paths, destination_dir):
@@ -620,6 +578,7 @@ def save_full_country_map(lat, lon, padding_ratio=0.1, output_image="map_country
         ),
         "unknown",
     )
+    output_image = to_webp(output_image)
     print(f"  - Saved country map for {country_name}: {output_image}")
     return output_image
 
@@ -825,6 +784,7 @@ def save_trip_route_map(
     if os.path.isfile(stale_marker_path):
         os.remove(stale_marker_path)
 
+    output_image = to_webp(output_image)
     print(f"  - Saved {background} route map: {output_image}")
     return output_image
 
@@ -921,8 +881,32 @@ def _text_with_rst_references(text, references):
     return "".join(parts)
 
 
+def _trip_date_range(footprints):
+    """! @brief Return ISO start and end dates of a trip from its footprints.
+    The end date is the latest footprint date plus its overnights. Empty strings
+    are returned when no footprint has a valid date.
+    """
+    starts, ends = [], []
+    for footprint in footprints:
+        try:
+            day = date.fromisoformat(str(footprint.get("date", "")).strip()[:10])
+        except ValueError:
+            continue
+        try:
+            nights = int(footprint.get("overnights") or 0)
+        except (TypeError, ValueError):
+            nights = 0
+        starts.append(day)
+        ends.append(day + timedelta(days=max(nights, 0)))
+    if not starts:
+        return "", ""
+    return min(starts).isoformat(), max(ends).isoformat()
+
+
 def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
-    """! @brief Build Pelican-compatible reStructuredText for a trip and footprints."""
+    """! @brief Build Pelican articles (reStructuredText) for a trip and its footprints.
+    @param content_dir Pelican articles source directory.
+    """
     uid = str(user_data.get("uid", "")).strip()
     trip_slug = str(trip.get("slug", "")).strip()
     trip_title = str(trip.get("title") or trip_slug).strip()
@@ -985,11 +969,16 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         if tag and tag.casefold() not in known_tags:
             trip_tags.append(tag)
             known_tags.add(tag.casefold())
+    start_date, end_date = _trip_date_range(footprints)
     chapters = [
         _rst_metadata(
             Title=trip_title,
+            Date=start_date,
+            Start=start_date,
+            End=end_date,
             Slug=f"{uid}-{trip_slug}",
-            Category="Trips",
+            Category="findpenguins",
+            Template="trip",
             Tags=", ".join(trip_tags),
             Summary=trip.get("description") or trip.get("period", ""),
             Days=trip.get("days", ""),
@@ -1031,275 +1020,6 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
             "",
         ]
         _write_rst(os.path.join(footprint_dir, "footprint.rst"), "\n".join(content))
-
-
-def build_findpenguins_rst(content_dir, profiles_data):
-    """! @brief Build a root Pelican page listing trips across all scraped profiles.
-    Trips are ordered by their earliest footprint date first; trips without
-    a valid footprint date follow dated trips.
-    """
-    trips_with_profiles = []
-    for user_data, trips in profiles_data:
-        uid = str(user_data.get("uid", "")).strip()
-        profile_name = str(user_data.get("name") or uid).strip()
-        for trip in trips:
-            slug = str(trip.get("slug", "")).strip()
-            if not uid or not slug:
-                continue
-            dates = []
-            for footprint in trip.get("footprints", []):
-                try:
-                    dates.append(date.fromisoformat(str(footprint.get("date", "")).strip()[:10]))
-                except ValueError:
-                    continue
-            start_date = min(dates) if dates else None
-            trips_with_profiles.append((start_date, profile_name, uid, slug, trip))
-
-    trips_with_profiles.sort(
-        key=lambda item: item[0] or date.min,
-        reverse=True,
-    )
-
-def build_trip_html(trip_dir, trip, footprints):
-    """! @brief Build a trip book: index.html plus one etape_N.html per footprint.
-    @param trip_dir Trip output folder (photos are linked relative to it).
-    @param trip Dictionary describing one trip.
-    @param footprints List of trip footprint dictionaries.
-    @return None
-    """
-
-    print(f"  - Building trip HTML [{trip_dir}]...")
-
-    trip_title = _esc(trip.get("title") or trip.get("slug", ""))
-    period = _esc(trip.get("period", ""))
-    period_badge = f'<div class="badge">📅 {period}</div>' if period else ""
-
-    index_html = (
-        f'<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>{trip_title}</title>'
-        f"<style>{HTML_CSS}</style></head>\n"
-        f'<body><div class="container"><header><a href="../index.html">← Retour</a>'
-        f'<h1 style="font-size: 3rem;">{trip_title}</h1><div class="meta-badge-container">'
-        f'{period_badge}</div></header>'
-        f'<h2>Chapitres</h2><ol style="line-height: 2;">\n'
-    )
-    markers = []
-
-    total = len(footprints)
-    for i, fp in enumerate(footprints):
-        title = _esc(fp.get("title") or f"Étape {i + 1}")
-        date = _esc(fp.get("date", ""))
-        city = fp.get("city", "")
-        country = fp.get("country", "")
-        location_name = _esc(", ".join(part for part in (city, country) if part))
-        lat = str(fp.get("lat", "")).strip()
-        lon = str(fp.get("lon", "")).strip()
-        weather = _esc(fp.get("weather", ""))
-        temperature = _esc(fp.get("temperature", ""))
-        altitude = _esc(fp.get("altitude", ""))
-
-        file_name = f"etape_{i + 1}.html"
-        index_html += f'<li><a href="{file_name}">{title}'
-        if location_name:
-            index_html += f" - <small>{location_name}</small>"
-        index_html += "</a></li>\n"
-
-        try:
-            markers.append({"lat": float(lat), "lon": float(lon), "title": fp.get("title") or f"Étape {i + 1}", "href": file_name})
-        except ValueError:
-            pass
-
-        prev_title = _esc(footprints[i - 1].get("title") or f"Étape {i}") if i > 0 else ""
-        next_title = _esc(footprints[i + 1].get("title") or f"Étape {i + 2}") if i < total - 1 else ""
-        prev_link = f'<a href="etape_{i}.html">← {prev_title}</a>' if i > 0 else "<span></span>"
-        next_link = f'<a href="etape_{i + 2}.html">{next_title} →</a>' if i < total - 1 else "<span></span>"
-
-        photo_html = ""
-        for photo in fp.get("photos", []):
-            src = html.escape(os.path.relpath(photo, trip_dir).replace(os.sep, "/"), quote=True)
-            photo_html += f'<div class="photo-card"><img src="{src}" alt="Photo"></div>\n'
-
-        video_html = "".join(
-            '<div class="video-container"><video controls preload="metadata" '
-            f'src="{html.escape(os.path.relpath(video, trip_dir).replace(os.sep, "/"), quote=True)}"></video></div>'
-            for video in fp.get("videos", [])
-        )
-
-        map_div_html = map_script_html = ""
-        try:
-            float(lat)
-            float(lon)
-            has_coords = True
-        except ValueError:
-            has_coords = False
-        if has_coords:
-            popup = title.replace("\\", "\\\\")
-            map_div_html = '<div id="map" class="map-container"></div>'
-            map_script_html = f"""
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <script>
-                document.addEventListener("DOMContentLoaded", function() {{
-                    var map = L.map('map').setView([{lat}, {lon}], 12);
-                    L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{attribution: '© OpenStreetMap'}}).addTo(map);
-                    L.marker([{lat}, {lon}]).addTo(map).bindPopup("<b>{popup}</b>").openPopup();
-                }});
-            </script>"""
-
-        badges = ""
-        if location_name:
-            badges += f'<div class="badge">📍 {location_name}</div>'
-        if date:
-            badges += f'<div class="badge">📅 {date}</div>'
-        if weather or temperature:
-            badges += f'<div class="badge">☀️ {weather} {temperature}</div>'
-        if altitude:
-            badges += f'<div class="badge">⛰️ {altitude} m</div>'
-
-        step_html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8"><title>{title}</title>
-    <style>{HTML_CSS}</style>
-    {map_script_html}
-</head>
-<body>
-    <div class="container">
-        <header>
-            <div class="nav-links" style="margin-top:0; padding-top:0; border-top:none;">{prev_link}<a href="index.html">{trip_title}</a>{next_link}</div>
-            <div class="step-number" style="margin-top:30px;">Étape {i + 1}</div>
-            <h1 style="margin-top:5px; margin-bottom:10px;">{title}</h1>
-            <div class="meta-badge-container">{badges}</div>
-        </header>
-        {map_div_html}
-        <div class="story-text">{_text_with_html_references(fp.get("text", ""), fp.get("references", []))}</div>
-        <div class="photo-grid">{photo_html}</div>
-    </div>
-</body>
-</html>"""
-        _write_html(os.path.join(trip_dir, file_name), step_html)
-
-    if markers:
-        # "<" is escaped so titles cannot close the script element.
-        markers_json = json.dumps(markers).replace("<", "\\u003c")
-        trip_map = f"""<div id="trip-map" class="map-container" style="height: 420px;"></div>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-document.addEventListener("DOMContentLoaded", function() {{
-    var markers = {markers_json};
-    var map = L.map('trip-map');
-    L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{attribution: '© OpenStreetMap'}}).addTo(map);
-    var bounds = [];
-    markers.forEach(function(m) {{
-        var link = document.createElement('a');
-        link.href = m.href;
-        link.textContent = m.title;
-        L.marker([m.lat, m.lon]).addTo(map).bindPopup(link);
-        bounds.push([m.lat, m.lon]);
-    }});
-    map.fitBounds(bounds, {{padding: [30, 30], maxZoom: 12}});
-}});
-</script>
-"""
-        index_html = index_html.replace("<h2>Chapitres</h2>", trip_map + "<h2>Chapitres</h2>", 1)
-    index_html += "</ol></div></body></html>"
-    _write_html(os.path.join(trip_dir, "index.html"), index_html)
-
-
-def build_user_html(output_dir, user_data, trips, asset_dir=None):
-    """! @brief Build the user landing page listing every trip book.
-    @param output_dir Profile output folder (trip books live in <output_dir>/<slug>/).
-    @param user_data Dictionary of profile-level fields.
-    @param trips List of trip dictionaries.
-    @param asset_dir Optional source profile folder for linked assets.
-    @return None
-    """
-
-    print(f"  - Building user HTML [{output_dir}]...")
-
-    name = _esc(user_data.get("name") or user_data.get("uid", ""))
-    picture = str(user_data.get("picture", "")).strip()
-    if picture and asset_dir:
-        picture = os.path.relpath(os.path.join(asset_dir, picture), output_dir).replace(os.sep, "/")
-    avatar = f'<img class="avatar" src="{html.escape(picture, quote=True)}" alt="">' if picture else ""
-    bio = _esc(user_data.get("bio", ""))
-    location = _esc(user_data.get("location", ""))
-    location_badge = (
-        f'<div class="meta-badge-container"><div class="badge">📍 {location}</div></div>'
-        if location
-        else ""
-    )
-
-    page = (
-        f'<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>{name}</title>'
-        f"<style>{HTML_CSS}</style></head>\n"
-        f'<body><div class="container"><header><a href="../index.html">← FindPenguins</a><br>{avatar}<h1>{name}</h1>'
-        f'{location_badge}'
-        f'{"<p>" + bio + "</p>" if bio else ""}</header><ul>\n'
-    )
-
-    for trip in trips:
-        slug = trip.get("slug", "")
-        if not slug:
-            continue
-        count = len(trip.get("footprints", []))
-        title = _esc(trip.get("title") or slug)
-        period = _esc(trip.get("period", ""))
-        page += (
-            f'<li><a href="{html.escape(slug, quote=True)}/index.html"><strong>{title}</strong></a>'
-            f'{" <small>" + period + "</small>" if period else ""} ({count} étapes)</li>\n'
-        )
-
-    page += "</ul></div></body></html>"
-    _write_html(os.path.join(output_dir, "index.html"), page)
-
-
-def build_global_html(output_dir, profiles_data, assets_dir=None):
-    """! @brief Build one landing page listing every profile and its trips.
-    @param output_dir Root output folder (profiles live in <output_dir>/<uid>/).
-    @param profiles_data List of (user_data, trips) tuples, one per profile.
-    @param assets_dir Optional source root folder for linked profile assets.
-    @return None
-    """
-
-    print(f"  - Building global HTML [{output_dir}]...")
-
-    page = (
-        f'<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>FindPenguins</title>'
-        f'<style>{HTML_CSS}</style></head>\n<body><div class="container">'
-        f'<header><h1>FindPenguins</h1></header>\n'
-    )
-
-    for user_data, trips in profiles_data:
-        uid = str(user_data.get("uid", ""))
-        if not uid:
-            continue
-        base = html.escape(uid, quote=True)
-        name = _esc(user_data.get("name") or uid)
-        picture = str(user_data.get("picture", "")).strip()
-        picture_src = f"{base}/{html.escape(picture, quote=True)}"
-        if picture and assets_dir:
-            picture_src = os.path.relpath(
-                os.path.join(assets_dir, uid, picture), output_dir
-            ).replace(os.sep, "/")
-            picture_src = html.escape(picture_src, quote=True)
-        avatar = f'<img class="avatar" src="{picture_src}" alt=""> ' if picture else ""
-        page += f'<h2>{avatar}<a href="{base}/index.html">{name}</a></h2><ul>\n'
-        for trip in trips:
-            slug = trip.get("slug", "")
-            if not slug:
-                continue
-            title = _esc(trip.get("title") or slug)
-            period = _esc(trip.get("period", ""))
-            count = len(trip.get("footprints", []))
-            page += (
-                f'<li><a href="{base}/{html.escape(slug, quote=True)}/index.html"><strong>{title}</strong></a>'
-                f'{" <small>" + period + "</small>" if period else ""} ({count} étapes)</li>\n'
-            )
-        page += "</ul>\n"
-
-    page += "</div></body></html>"
-    _write_html(os.path.join(output_dir, "index.html"), page)
 
 
 def build_merged_xml(profiles_data):

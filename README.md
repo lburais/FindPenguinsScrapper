@@ -31,13 +31,13 @@ Ce script orchestre l'authentification, le scraping des données dynamiques (tex
 Le projet est structuré de manière hautement modulaire :
 
 ```text
-├── findpenguins_scrapper.py # Point d'entrée CLI et orchestrateur principal
+├── findpenguins_scrapper.py # Point d'entrée (fichier de profils) et orchestrateur
 ├── fp_config.py             # Configuration centrale (endpoints, headers, namespaces)
 ├── fp_utils.py              # Utilitaires (navigation Playwright, gestion des cookies, téléchargements)
 ├── fp_parsers.py            # Extraction des données et parsing DOM (BeautifulSoup)
-├── fp_writers.py            # Sérialisation des sorties (génération GPX, XML et templates HTML)
+├── fp_writers.py            # Sérialisation des sorties (génération GPX, XML et articles Pelican RST)
 ├── fp_elevation.py          # Enrichissement topographique des points de trace GPX
-└── profiles.json            # (Optionnel) Fichier de gestion sécurisée des identifiants
+└── profiles.json            # Profils, identifiants et réglages
 ```
 
 La documentation technique complémentaire se trouve dans [`docs/`](docs/).
@@ -77,17 +77,22 @@ python -m playwright install chromium
 
 ## ⚙️ Utilisation
 
-Le script s'exécute en ligne de commande (CLI) et propose plusieurs arguments de configuration :
-
-### Méthode Directe (En passant les identifiants)
 ```bash
-python findpenguins_scrapper.py --profile <ID_PROFIL> <EMAIL_CONNEXION> <MOT_DE_PASSE>
+python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html]
 ```
 
-### Méthode Sécurisée (Via le fichier `profiles.json`)
-Vous pouvez créer un fichier `profiles.json` à la racine pour stocker de manière hermétique vos profils :
+- `profiles.json` : fichier de profils (obligatoire).
+- `-o`, `--output` : archive XML, GPX et médias (défaut `output`).
+- `--content` : articles Pelican (reStructuredText) générés (défaut `../website/content/articles/findpenguins`).
+- `-t`, `--trip` : ne scraper que le voyage portant ce slug (défaut : tous).
+- `--save-html` : conserver les pages HTML brutes (débogage).
+
+### Fichier de profils
 ```json
 {
+  "settings": {
+    "map_background": "satellite"
+  },
   "MonVoyageur": {
     "id": "pseudo_findpenguins",
     "username": "votre_email@exemple.com",
@@ -95,86 +100,48 @@ Vous pouvez créer un fichier `profiles.json` à la racine pour stocker de mani�
   }
 }
 ```
-Lancez ensuite simplement l'extraction par le nom du profil :
-```bash
-python findpenguins_scrapper.py --profile-name MonVoyageur
-```
+Toutes les entrées autres que `settings` sont des profils, tous scrapés à chaque exécution. L'entrée `settings` est facultative :
 
-`--profile` peut être répété pour fournir plusieurs triplets ID/identifiant/mot de passe. `--profile-name` peut être répété pour choisir plusieurs entrées du fichier d'identifiants. Sans l'un ou l'autre, l'outil propose une sélection interactive de tous les profils de ce fichier. `--credentials PATH` permet de choisir ce fichier; par défaut, `profiles.json` est recherché à côté du script.
-
-Options de carte des voyages :
-
-```bash
-python findpenguins_scrapper.py --profile-name MonVoyageur --trip-map-background satellite --trip-map-footprint-bubbles
-```
-
-### Options Disponibles
-- `--profile ID USERNAME PASSWORD` : Profil à scraper; répétable.
-- `--profile-name NAME` : Nom d'un profil enregistré dans les identifiants; répétable.
-- `--credentials PATH` : Fichier JSON d'identifiants (par défaut `profiles.json` près du script).
-- `-o`, `--output` : Dossier de destination des fichiers XML, GPX et médias (par défaut `output`).
-- `-t`, `--trip` : Isoler et parser uniquement un voyage spécifique via son slug d'URL.
-- `--no-elevation` : Désactiver l'enrichissement des altitudes des points de trace GPX (activé par défaut).
-- `--save-html` : Conserver les captures HTML brutes téléchargées à des fins de débogage.
-- `--trip-map-background` : Fond de carte PNG (`transparent`, `satellite` ou `street`; transparent par défaut).
-- `--trip-map-footprint-bubbles` : Afficher les bulles numérotées des étapes sur la carte.
-- `--html PATH` : Générer le livre de voyage HTML sous ce dossier.
-- `--rst PATH` : Générer les pages reStructuredText compatibles avec Pelican sous `PATH`.
-
-Les options `--html PATH` et `--rst PATH` peuvent être utilisées séparément ou ensemble. Les cartes de route des sources RST sont générées lors du scraping et copiées avec `--rst`; les fonds satellite et rue nécessitent un accès au service cartographique Esri.
-Sans l'une de ces options, seuls les exports GPX et XML sont générés.
+| Réglage | Défaut | Rôle |
+|---|---|---|
+| `map_background` | `transparent` | Fond de la carte de route : `transparent`, `satellite` ou `street` (Esri). |
+| `footprint_bubbles` | `false` | Bulles numérotées des étapes sur la carte. |
 
 ---
 
-## 💾 Structure de l'Archive Générée (`output/`)
+## 💾 Structure générée
 
-Une fois le scraping terminé, le dossier d'archive regroupe les données et médias téléchargés :
+Archive (`--output`) :
 
 ```text
-output/                         # Sources (option --output) 
+output/
 └── pseudo_findpenguins/
     ├── pseudo_findpenguins.xml # Index XML complet du profil
-    ├── voyage-islande.gpx      # Fichier GPX du parcours avec waypoints enrichis
-    └── voyage-islande/         # Médias du voyage
-        ├── map_trip.png        # Carte de route si une trace GPX valide existe
-        ├── cover_*.jpg         # Image de couverture si elle existe
-        ├── *.jpg               # Photos et images des compagnons
-        └── *.mp4               # Vidéos téléchargées localement
+    ├── voyage-islande.gpx      # Parcours avec waypoints enrichis
+    └── voyage-islande/         # Médias du voyage (images en WebP sans perte)
+        ├── map_trip.webp
+        ├── cover_*.webp
+        ├── *.webp              # Photos et images des compagnons
+        └── *.mp4
 ```
 
-Cette arborescence décrit l'archive GPX/XML et ses médias. Elle n'inclut pas les pages HTML
-optionnelles, sauf si `--html` pointe explicitement vers `--output`.
-
-Les pages HTML générées par `--html PATH` sont écrites séparément sous `PATH` :
+Articles Pelican (`--content`) :
 
 ```text
-PATH/
-└── pseudo_findpenguins/
-    ├── index.html              # Index du profil
-    └── voyage-islande/
-        ├── index.html          # Index du voyage et carte
-        ├── etape_1.html        # Une page par étape
-        └── etape_2.html
-```
-
-Les sources Pelican générées par `--rst PATH` sont également séparées :
-
-```text
-PATH/
+content/
 └── pseudo_findpenguins/
     └── voyage-islande/
-        ├── trip.rst
-        ├── map_trip.png
+        ├── trip.rst            # Article du voyage (Category: findpenguins, Date/Start/End)
+        ├── map_trip.webp
         └── footprint_1/
-            ├── footprint.rst
-            ├── map_country.png
-            ├── photo_12345.jpg
-            └── video_67890.mp4
+            ├── footprint.rst   # Article de l'étape (Category: titre du voyage)
+            ├── map_country.webp
+            └── *.webp, *.mp4
 ```
 
-Les médias de l'archive sont stockés sous `--output`; les exportateurs HTML et Pelican les copient ou les référencent dans leurs structures de sortie respectives.
+Le voyage porte les métadonnées `Date` et `Start` (première étape), `End` (dernière étape plus ses nuits) et `Category: findpenguins`. Toutes les images (photos, couvertures, avatars, cartes) sont converties en WebP sans perte; les vidéos sont conservées telles quelles.
 
-Les cartes de route mesurent 1200×800 pixels et tracent la route en blanc (trait de 4 px). Un voyage sans trace GPX valide n'a pas de carte de route. Les images de fond `satellite` et `street` proviennent du service d'export cartographique Esri.
+Les cartes de route mesurent 1200×800 pixels. Un voyage sans trace GPX valide n'a pas de carte de route.
 
 ---
 

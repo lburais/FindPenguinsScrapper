@@ -16,7 +16,7 @@ This document describes the current data flow and generated outputs.
 - `fp_utils.py`: login, Playwright setup, page loading, downloads and serialization helpers.
 - `fp_parsers.py`: profile, trip, insight and footprint extraction.
 - `fp_writers.py`: XML/GPX serialization, HTML travel books, Pelican RST pages and route-map PNGs.
-- `fp_elevation.py`: optional OpenTopoData SRTM90m enrichment for GPX track-point elevations.
+- `fp_elevation.py`: OpenTopoData SRTM90m enrichment for GPX track-point elevations.
 
 ## Runtime Data Flow
 
@@ -30,7 +30,7 @@ flowchart TD
   F --> G[Download route GPX and footprint media]
   G --> H[Parse footprints and match GPX waypoints]
   H --> I[Build enriched trip GPX]
-  I --> J[Optional track elevation enrichment]
+  I --> J[Track elevation enrichment]
   I --> K[Optional route-map PNG]
   I --> L[Update profile XML]
   K --> M{Requested formats}
@@ -50,19 +50,17 @@ For profile id `<uid>`, the primary archive is written under `--output`:
 - `<output>/<uid>/<uid>.xml`: profile and trip index.
 - `<output>/<uid>/<trip-slug>.gpx`: enriched route and footprint waypoints.
 - `<output>/<uid>/<trip-slug>/`: downloaded route source, trip image, footprint photos/videos,
-  optional fetched HTML, and `map_trip.png` when a valid route is available.
+  optional fetched HTML, and `map_trip.webp` when a valid route is available.
 
-Optional HTML (`--html PATH`) writes profile and trip-book pages under
-`<PATH>/<uid>/`; one trip `index.html` and one `etape_N.html` are generated per trip.
-When more than one profile is scraped, a global `index.html` is also generated at `<PATH>`.
-The interactive maps use Leaflet and OpenStreetMap tiles, so they require network access.
+Pelican articles are written under `--content` (default
+`../website/content/articles/findpenguins`): `<content>/<uid>/<trip-slug>/trip.rst` and one
+`footprint_N/footprint.rst` per footprint. Media and maps are copied beside the sources. The trip
+article has `Category: findpenguins`, `Template: trip` and `Date`/`Start`/`End` metadata; the
+website builds its trip index from these articles.
 
-Optional Pelican RST (`--rst PATH`) writes `<PATH>/<uid>/<trip-slug>/trip.rst` and one
-`footprint_N/footprint.rst` per footprint. Media and maps are copied beside the generated
-sources. No user/profile RST page or global FindPenguins index is generated; the website is
-responsible for building its trip index from the trip-page metadata.
+All downloaded and generated images are stored as lossless WebP; videos are untouched.
 
-Route maps are 1200×800 PNGs with a white route line. The default background is transparent;
+Route maps are 1200×800 WebP images with a white route line. The default background is transparent;
 `satellite` and `street` backgrounds use Esri's export service. Footprint bubbles are opt-in.
 Trips without a valid GPX track do not get a route map.
 

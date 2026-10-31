@@ -6,3 +6,4 @@ scipy
 geopandas
 matplotlib
 shapely
+Pillow

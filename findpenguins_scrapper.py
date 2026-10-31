@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """! @file findpenguins_scrapper.py
-@brief CLI entrypoint and orchestration for FindPenguins scraping/export.
+@brief Entrypoint and orchestration for FindPenguins scraping/export.
 
-This script coordinates authentication, parsing, and serialization modules to
-produce one user XML index plus one GPX file per trip.
+Usage: python findpenguins_scrapper.py PROFILES.json [--output DIR] [--content DIR] [--trip SLUG] [--save-html]
+
+The profiles file maps profile names to {id, username, password}. An optional
+"settings" entry configures the remaining options (see DEFAULT_SETTINGS). For every profile the
+script produces one user XML index, one GPX file per trip and Pelican articles
+(reStructuredText) for each trip and footprint.
 """
 
 from urllib.parse import urljoin
@@ -12,7 +16,6 @@ import argparse
 import json
 import os
 import shutil
-import sys
 import xml.etree.ElementTree as ET
 import requests
 
@@ -24,12 +27,14 @@ from fp_writers import (
     save_trip_route_map,
     build_user_xml,
     build_merged_xml,
-    build_trip_html,
-    build_user_html,
-    build_global_html,
     build_trip_rst,
-    build_findpenguins_rst,
 )
+
+## Default run settings; override them with a "settings" entry in the profiles file.
+DEFAULT_SETTINGS = {
+    "map_background": "transparent",
+    "footprint_bubbles": False,
+}
 
 # ##############################################################################################
 # process_profile
@@ -40,26 +45,22 @@ def process_profile(
     profile_id,
     username,
     password,
-    output,
-    trip_slug,
-    elevation,
-    save_html,
-    map_background="transparent",
-    show_footprint_bubbles=False,
+    settings,
 ):
     """! @brief Run end-to-end scraping workflow for one profile.
     @param profile_id Profile ID to scrape.
     @param username Username for authentication.
     @param password Password for authentication.
-    @param output Root output directory.
-    @param trip_slug Optional slug of the only trip to scrape.
-    @param elevation Whether to adjust track elevations.
-    @param save_html Whether to save downloaded HTML for debugging.
-    @param map_background Background for the generated trip route map.
-    @param show_footprint_bubbles Whether to add footprint markers to the map.
+    @param settings Run settings (see DEFAULT_SETTINGS).
     @return Tuple containing profile data and its scraped trips.
     @exception RuntimeError Raised when requested single trip slug is not found.
     """
+
+    output = settings["output"]
+    save_html = settings["save_html"]
+    trip_slug = settings["trip"]
+    map_background = settings["map_background"]
+    show_footprint_bubbles = settings["footprint_bubbles"]
 
     session = login(username, password)
     playwright, browser, page = create_browser_page(session)
@@ -134,16 +135,17 @@ def process_profile(
                 if os.path.exists(downloaded_trip_gpx):
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
 
-                build_trip_gpx(trip_gpx, user_data, trip, footprints, elevation)
+                build_trip_gpx(trip_gpx, user_data, trip, footprints)
                 route_map = os.path.join(trip_dir, "map_trip.png")
                 try:
-                    if save_trip_route_map(
+                    route_map = save_trip_route_map(
                         trip_gpx,
                         footprints,
                         route_map,
                         background=map_background,
                         show_footprint_bubbles=show_footprint_bubbles,
-                    ):
+                    )
+                    if route_map:
                         trip["route_map"] = os.path.relpath(route_map, output_dir)
                 except (OSError, ET.ParseError, ValueError, requests.RequestException) as exc:
                     print(f"  - WARNING: unable to create satellite route map for {trip['title']}: {exc}")
@@ -178,47 +180,39 @@ def process_profile(
 # scrapper
 # ##############################################################################################
 
-def scrapper(
-    profile,
-    profile_name,
-    credentials,
-    output,
-    trip_slug,
-    elevation,
-    save_html,
-    map_background="transparent",
-    show_footprint_bubbles=False,
-):
-    """! @brief Run scraping workflow for one or more profiles.
-    @param profile Profile triplets supplied directly on the command line.
-    @param profile_name Optional credential profile names to scrape.
-    @param credentials JSON credentials file path.
-    @param output Root output directory.
-    @param trip_slug Optional slug of the only trip to scrape.
-    @param elevation Whether to adjust track elevations.
+def load_profiles(profiles_file):
+    """! @brief Read the profiles file.
+    @param profiles_file JSON file mapping names to {id, username, password}, plus optional "settings".
+    @return Tuple (list of (id, username, password), settings from the "settings" entry over DEFAULT_SETTINGS).
+    @exception ValueError Raised when the file has no usable profile.
+    """
+    with open(profiles_file, encoding="utf-8") as f:
+        known = json.load(f)
+    if not isinstance(known, dict):
+        raise ValueError(f"{profiles_file} must contain a JSON object")
+
+    settings = {**DEFAULT_SETTINGS, **known.pop("settings", {})}
+
+    profiles = [
+        (entry["id"], entry["username"], entry.get("password", ""))
+        for entry in known.values()
+    ]
+    if not profiles:
+        raise ValueError(f"No profile found in {profiles_file}")
+    return profiles, settings
+
+
+def scrapper(profiles_file, output, content, trip=None, save_html=False):
+    """! @brief Scrape every profile of the profiles file and generate the Pelican articles.
+    @param profiles_file JSON profiles file path.
+    @param output Archive directory for XML, GPX and downloaded media.
+    @param content Pelican articles directory.
+    @param trip Optional slug of the only trip to scrape.
     @param save_html Whether to save downloaded HTML for debugging.
-    @param map_background Background for the generated trip route map.
-    @param show_footprint_bubbles Whether to add footprint markers to the map.
     @return List of (user_data, trips) tuples for successfully scraped profiles.
     """
-    # Parse profile triplets (id, username, password)
-    profiles = list(profile or [])
-
-    # Profiles from the credentials file: selected by name, or all when no name is given
-    if profile_name or not profiles:
-        with open(credentials, encoding="utf-8") as f:
-            known = json.load(f)
-        names = profile_name or list(known)
-        for name in names:
-            if name not in known:
-                print(f"ERROR: Unknown profile name '{name}' in {credentials}")
-                return []
-            entry = known[name]
-            profiles.append((entry["id"], entry["username"], entry.get("password", "")))
-
-    if not profiles:
-        print("ERROR: No profile given (use --profile, --profile-name or a credentials file)")
-        return []
+    profiles, settings = load_profiles(profiles_file)
+    settings.update(output=output, trip=trip, save_html=save_html)
 
     # Process each profile, collecting results for merged XML
     collected = []
@@ -228,19 +222,7 @@ def scrapper(
         print(f"{'='*60}\n")
 
         try:
-            result = process_profile(
-                profile_id,
-                username,
-                password,
-                output,
-                trip_slug,
-                elevation,
-                save_html,
-                map_background,
-                show_footprint_bubbles,
-            )
-            if result is not None:
-                collected.append(result)
+            collected.append(process_profile(profile_id, username, password, settings))
         except Exception as e:
             print(f"\n❌ ERROR processing profile {profile_id}: {e}\n")
 
@@ -254,45 +236,16 @@ def scrapper(
         os.makedirs(output, exist_ok=True)
         merged_tree.write(merged_xml, encoding="utf-8", xml_declaration=True)
         print(f"✅ Merged XML: {merged_xml}")
+
+    generate_rst_outputs(content, output, collected)
     return collected
 
 
-# ##############################################################################################
-# generate_html_outputs
-# ##############################################################################################
-
-def generate_html_outputs(output, profiles_data, html_output=None):
-    """! @brief Generate HTML outputs after all scraping completes.
-    @param output Root output directory.
-    @param profiles_data List of (user_data, trips) tuples returned by scrapper.
-    @param html_output Optional root directory for generated HTML pages.
-    @return None
-    """
-
-    if not profiles_data:
-        return
-
-    html_output = html_output or output
-    print("\nGenerating HTML output(s)...")
-    for user_data, trips in profiles_data:
-        output_dir = os.path.join(html_output, user_data["uid"])
-        asset_dir = os.path.join(output, user_data["uid"])
-        for trip in trips:
-            trip_dir = os.path.join(output_dir, trip["slug"])
-            footprints = trip.get("footprints", [])
-            build_trip_html(trip_dir, trip, footprints)
-
-        build_user_html(output_dir, user_data, trips, asset_dir=asset_dir)
-
-    if len(profiles_data) > 1:
-        build_global_html(html_output, profiles_data, assets_dir=output)
-
-
 def generate_rst_outputs(content_dir, output, profiles_data):
-    """! @brief Generate Pelican-compatible reStructuredText after scraping.
-    @param content_dir Pelican pages source directory.
+    """! @brief Generate Pelican articles (reStructuredText) after scraping.
+    @param content_dir Pelican articles source directory.
     @param output Root directory containing scraped profile assets.
-    @param profiles_data List of (user_data, trips) tuples returned by scrapper.
+    @param profiles_data List of (user_data, trips) tuples returned by process_profile.
     @return None
     """
     if not profiles_data:
@@ -304,41 +257,6 @@ def generate_rst_outputs(content_dir, output, profiles_data):
             trip_dir = os.path.join(profile_dir, trip["slug"])
             build_trip_rst(content_dir, trip_dir, user_data, trip, trip.get("footprints", []))
 
-        legacy_user_page = os.path.join(content_dir, user_data["uid"], "user.rst")
-        if os.path.isfile(legacy_user_page):
-            os.remove(legacy_user_page)
-    build_findpenguins_rst(content_dir, profiles_data)
-
-
-def prompt_for_profile_names(credentials):
-    """! @brief Prompt for one or more named profiles from a credentials file.
-    @param credentials JSON credentials file path.
-    @return Selected profile names, or all names when the selection is empty.
-    """
-    with open(credentials, encoding="utf-8") as f:
-        known_profiles = json.load(f)
-
-    if not isinstance(known_profiles, dict) or not known_profiles:
-        raise ValueError(f"No profiles found in {credentials}")
-
-    profile_names = list(known_profiles)
-    print("Available profiles:")
-    for name in profile_names:
-        print(f"  - {name}")
-
-    while True:
-        selection = input("Profile name(s), comma-separated (Enter for all): ").strip()
-        if not selection:
-            return profile_names
-
-        selected_names = [name.strip() for name in selection.split(",") if name.strip()]
-        unknown_names = [name for name in selected_names if name not in known_profiles]
-        if unknown_names:
-            print(f"Unknown profile(s): {', '.join(unknown_names)}")
-            continue
-        if selected_names:
-            return selected_names
-
 
 # ##############################################################################################
 # __main__
@@ -346,62 +264,29 @@ def prompt_for_profile_names(credentials):
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(
-                prog='FindPenguins scrapper',
-                description='Scrap one or more FindPenguins profiles')
-
-    parser.add_argument("--profile", action='append', nargs=3, metavar=('ID', 'USERNAME', 'PASSWORD'),
-                        help="Profile triplet: id username password (can be used multiple times)")
-    app_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
-    parser.add_argument("--credentials", default=os.path.join(app_dir, "profiles.json"),
-                        help="JSON file mapping profile names to {id, username, password}")
-    parser.add_argument("--profile-name", action='append', metavar='NAME',
-                        help="Profile name from the credentials file (can be used multiple times; default: all)")
-    parser.add_argument("-o", "--output", default="output", help="Output folder")
-    parser.add_argument("-t", "--trip", default=None, help="Trip slug to parse only")
-    parser.add_argument("--no-elevation", dest="elevation", action="store_false", default=True, help="Skip track elevation adjustment (enabled by default)")
-    parser.add_argument("--save-html", action="store_true", help="Save fetched HTML files")
-    parser.add_argument(
-        "--trip-map-background",
-        choices=("transparent", "satellite", "street"),
-        default="transparent",
-        help="Trip route map background (default: transparent)",
+        prog="FindPenguins scrapper",
+        description="Scrape the FindPenguins profiles of a profiles file",
     )
     parser.add_argument(
-        "--trip-map-footprint-bubbles",
-        action="store_true",
-        help="Draw numbered footprint bubbles on trip route maps",
+        "profiles", 
+        help="JSON file mapping profile names to {id, username, password}")
+    parser.add_argument(
+        "--output", 
+        default="output", 
+        help="Archive folder for XML, GPX and media (default: output)")
+    parser.add_argument(
+        "--content",
+        default="../website/content/articles/findpenguins",
+        help="Pelican articles folder (default: ../website/content/articles/findpenguins)",
     )
-    parser.add_argument("--html", metavar="PATH", help="Generate HTML travel book pages under PATH (default: --output)")
-    parser.add_argument("--rst", metavar="PATH", help="Generate Pelican reStructuredText pages under PATH")
-
+    parser.add_argument(
+        "-t", "--trip",
+        default=None,
+        help="Trip slug to scrape only (default: all trips)")
+    parser.add_argument(
+        "--save-html", 
+        action="store_true", 
+        help="Save fetched HTML files")
     arguments = parser.parse_args()
-
-    if not arguments.profile and not arguments.profile_name:
-        if not sys.stdin.isatty():
-            parser.error("provide --profile/--profile-name or run without them in an interactive terminal")
-        try:
-            arguments.profile_name = prompt_for_profile_names(arguments.credentials)
-        except FileNotFoundError:
-            parser.error(
-                f"credentials file not found: {arguments.credentials}; provide --credentials or use --profile"
-            )
-        except ValueError as exc:
-            parser.error(str(exc))
-
-    profiles_data = scrapper(
-        arguments.profile,
-        arguments.profile_name,
-        arguments.credentials,
-        arguments.output,
-        arguments.trip,
-        arguments.elevation,
-        arguments.save_html,
-        arguments.trip_map_background,
-        arguments.trip_map_footprint_bubbles,
-    )
-    if arguments.html is not None:
-        generate_html_outputs(arguments.output, profiles_data, arguments.html)
-    if arguments.rst:
-        generate_rst_outputs(arguments.rst, arguments.output, profiles_data)
+    scrapper(arguments.profiles, arguments.output, arguments.content, arguments.trip, arguments.save_html)

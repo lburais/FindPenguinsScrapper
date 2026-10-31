@@ -6,30 +6,17 @@ This guide documents the current CLI, scraping pipeline and output behavior.
 
 Main script: `findpenguins_scrapper.py`.
 
-Profiles are selected in one of three ways:
+Usage: `python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html]`.
+It maps profile names to objects with `id`, `username`, and optional `password`; every profile is
+scraped. `--output` (default `output`) is the archive directory for XML, GPX and downloaded media,
+`--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory, and
+`-t`/`--trip SLUG` scrapes only the matching trip slug (default: all trips), and
+`--save-html` saves fetched source HTML for debugging. An optional `settings` entry configures the rest:
 
-- `--profile ID USERNAME PASSWORD` supplies credentials directly; repeat it for multiple profiles.
-- `--profile-name NAME` selects a name from the credentials JSON; repeat it to select several.
-- With neither option, an interactive prompt lists credential names and accepts comma-separated
-  selections. Pressing Enter selects all profiles. This requires an interactive terminal.
-
-The credentials JSON maps profile names to objects with `id`, `username`, and optional `password`
-fields. `--credentials PATH` selects the file; its default is `profiles.json` beside the script.
-
-Other options:
-
-| Option | Behavior |
-|--------|----------|
-| `-o`, `--output PATH` | Archive directory for XML, GPX and downloaded media; default `output`. |
-| `-t`, `--trip SLUG` | Scrape only the matching trip slug per selected profile. |
-| `--no-elevation` | Skip default OpenTopoData enrichment of track-point elevations. |
-| `--save-html` | Save fetched source HTML for debugging. |
-| `--trip-map-background` | Route-map background: `transparent` (default), `satellite`, or `street`. |
-| `--trip-map-footprint-bubbles` | Draw numbered footprint locations on the route map. |
-| `--html PATH` | Generate the standalone HTML travel book under `PATH`. |
-| `--rst PATH` | Generate Pelican-compatible trip and footprint sources under `PATH`. |
-
-Without `--html` or `--rst`, the scraper generates XML/GPX and the archive media only.
+| Setting | Behavior |
+|---------|----------|
+| `map_background` | Route-map background: `transparent` (default), `satellite`, or `street`. |
+| `footprint_bubbles` | Draw numbered footprint locations on the route map; default `false`. |
 
 ## Scraping and Serialization Flow
 
@@ -40,7 +27,7 @@ Without `--html` or `--rst`, the scraper generates XML/GPX and the archive media
    `parse_trip_insights` extracts trip description, countries, distances, transports and current
    trip companions; `parse_trip_image` finds the trip cover image.
 5. `build_trip_gpx` preserves the downloaded track, rebuilds coordinate-bearing waypoints, writes
-   trip and footprint extensions, and optionally enriches track-point elevations.
+   trip and footprint extensions, and enriches track-point elevations.
 6. A route-map PNG is generated after the final GPX update when it contains a valid track.
 7. The profile XML index is updated with the trip and companion data.
 8. Optional HTML or RST outputs are generated after scraping completes.
@@ -56,40 +43,28 @@ failures are reported as warnings and do not invalidate an otherwise successful 
 - Track elements from the downloaded GPX are preserved. Existing waypoints are replaced with
   coordinate-bearing footprints.
 - The closest track point supplies a footprint waypoint's time and custom matched-point extension.
-- OpenTopoData SRTM90m elevation enrichment is enabled by default and can be disabled with
-  `--no-elevation`.
+- OpenTopoData SRTM90m elevation enrichment is always performed.
 
 See [`xml-gpx-structure.md`](./xml-gpx-structure.md) for the serialized structure and
 [`data-fields.md`](./data-fields.md) for field provenance.
 
-## Standalone HTML Export
+## Pelican Article Export
 
-`--html PATH` generates a profile landing page, one trip index per trip, and one HTML page per
-footprint. With multiple profiles it also generates a global index. Trip maps and footprint links
-are interactive Leaflet maps using OpenStreetMap tiles; Leaflet and tiles are loaded from external
-services and therefore require network access.
+The scraper always generates, under `--content`:
 
-Reference labels found in footprint text are rendered as external links. Downloaded photos are
-included in the standalone travel book; downloaded videos remain in the archive and are copied
-with the Pelican footprint sources.
-
-## Pelican Source Export
-
-`--rst PATH` generates:
-
-- `<PATH>/<uid>/<trip-slug>/trip.rst` with trip index metadata, copied cover/map images and
+- `<content>/<uid>/<trip-slug>/trip.rst` with trip index metadata, copied cover/map images and
   companion metadata.
-- `<PATH>/<uid>/<trip-slug>/footprint_N/footprint.rst` for each footprint, with copied photos,
-  videos and attachments. Each geolocated footprint also gets a `map_country.png`.
+- `<content>/<uid>/<trip-slug>/footprint_N/footprint.rst` for each footprint, with copied photos,
+  videos and attachments. Each geolocated footprint also gets a `map_country.webp`.
 
 The RST export does not generate a user/profile page or a global FindPenguins index. A consuming
-Pelican site can build its own index from trip pages using their `Category: Trips` and trip metadata.
-The `TripMap` is generated as `map_trip.png` from the GPX track after the GPX is finalized.
+Pelican site can build its own index from trip pages using their `Category: findpenguins` and trip metadata (`Date`/`Start`, `End`).
+The `TripMap` is generated as `map_trip.webp` from the GPX track after the GPX is finalized.
 
-Trip maps are 1200×800 PNGs with a white 4px route line. Their background defaults to transparent;
-`--trip-map-background satellite` or `street` requests an Esri map image. These backgrounds require
+Trip maps are 1200×800 WebP images with a white 4px route line. Their background defaults to transparent;
+`map_background: satellite` or `street` requests an Esri map image. These backgrounds require
 network access. Footprint bubbles are omitted by default and enabled with
-`--trip-map-footprint-bubbles`. When no valid route exists, no map is generated.
+`footprint_bubbles`. When no valid route exists, no map is generated.
 
 Trip RST metadata retains values used by an index (including period, duration, distance,
 countries, description, cover, route map and companions). It has no body sections for insights or

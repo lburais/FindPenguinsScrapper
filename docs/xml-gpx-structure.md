@@ -122,9 +122,8 @@ Waypoint extensions (`<wpt><extensions>`) may include:
 Behavior:
 
 - If an official travel-route GPX is downloaded, its track data is preserved.
-- Existing `trk` nodes are temporarily removed during waypoint rebuild and appended back unchanged (except optional elevation enrichment).
-- `trkpt` may receive or update `<ele>` from OpenTopoData SRTM90m when elevation enrichment is
-  enabled (default); `--no-elevation` disables it.
+- Existing `trk` nodes are temporarily removed during waypoint rebuild and appended back unchanged (except elevation enrichment).
+- `trkpt` may receive or update `<ele>` from OpenTopoData SRTM90m by the elevation enrichment.
 
 ## 3) Ordering Rules in GPX
 
