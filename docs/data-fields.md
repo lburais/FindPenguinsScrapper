@@ -104,7 +104,7 @@ XML/GPX output (trip metadata extensions):
 `trip.rst` keeps trip summary metadata for a consuming site's trip index. It contains no body
 sections for standalone period/duration/distance, insights, or footprint links. Country names
 are emitted as tags, and transport modes with kilometer values are combined in the generated RST
-metadata as a `transport:` value. The scraper itself does not generate a profile page or global
+metadata as the `Transport` field. The scraper itself does not generate a profile page or global
 FindPenguins index; a consuming site builds its own index from these trip pages.
 
 `parse_trip_insights` also returns the companions from "Travelers in this trip"

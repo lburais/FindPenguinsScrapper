@@ -950,7 +950,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         for country in trip.get("countries") or []
         if str(country.get("flag", "")).strip()
     )
-    trip_tags = ["findpenguins", "travel"]
+    trip_tags = ["findpenguins", "trip"]
     known_tags = {tag.casefold() for tag in trip_tags}
     insight_tags = [
         str(country.get("name", "")).strip()
@@ -963,8 +963,6 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         detail = f"{name} {distance} km".strip() if distance else name
         if detail:
             transport_details.append(detail)
-    if transport_details:
-        insight_tags.append(f"transport: {'; '.join(transport_details)}")
     for tag in insight_tags:
         if tag and tag.casefold() not in known_tags:
             trip_tags.append(tag)
@@ -974,12 +972,12 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         _rst_metadata(
             Title=trip_title,
             Date=start_date,
-            Start=start_date,
-            End=end_date,
+            EndDate=end_date,
             Slug=f"{uid}-{trip_slug}",
             Category="findpenguins",
             Template="trip",
             Tags=", ".join(trip_tags),
+            Transport="; ".join(transport_details),
             Summary=trip.get("description") or trip.get("period", ""),
             Days=trip.get("days", ""),
             Period=trip.get("period", ""),
@@ -1010,7 +1008,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
                 Slug=f"{uid}-{trip_slug}-etape-{index}",
                 Category=trip_title,
                 # Tags=", ".join(part for part in ("findpenguins", city, country) if part),
-                Tags=", ".join(part for part in ("findpenguins", country) if part),
+                Tags=", ".join(part for part in ("findpenguins", "footprint", country) if part),
                 Summary=location or footprint.get("weather", ""),
                 Template="findpenguins_footprint",
                 **_footprint_gpx_fields(footprint, footprint_dir, trip.get("days", "")),

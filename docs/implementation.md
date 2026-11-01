@@ -58,7 +58,7 @@ The scraper always generates, under `--content`:
   videos and attachments. Each geolocated footprint also gets a `map_country.webp`.
 
 The RST export does not generate a user/profile page or a global FindPenguins index. A consuming
-Pelican site can build its own index from trip pages using their `Category: findpenguins` and trip metadata (`Date`/`Start`, `End`).
+Pelican site can build its own index from trip pages using their `Category: findpenguins` and trip metadata (`Date`, `EndDate`, `Transport`).
 The `TripMap` is generated as `map_trip.webp` from the GPX track after the GPX is finalized.
 
 Trip maps are 1200×800 WebP images with a white 4px route line. Their background defaults to transparent;
@@ -68,8 +68,8 @@ network access. Footprint bubbles are omitted by default and enabled with
 
 Trip RST metadata retains values used by an index (including period, duration, distance,
 countries, description, cover, route map and companions). It has no body sections for insights or
-footprint links. Country names are individual tags; transport mode distances are combined into one
-`transport` tag.
+footprint links. Country names are individual tags; transport mode distances are combined into the
+`Transport` field.
 
 ## Operational Notes
 

@@ -131,7 +131,7 @@ Articles Pelican (`--content`) :
 content/
 └── pseudo_findpenguins/
     └── voyage-islande/
-        ├── trip.rst            # Article du voyage (Category: findpenguins, Date/Start/End)
+        ├── trip.rst            # Article du voyage (Category: findpenguins, Date/EndDate)
         ├── map_trip.webp
         └── footprint_1/
             ├── footprint.rst   # Article de l'étape (Category: titre du voyage)
@@ -139,7 +139,7 @@ content/
             └── *.webp, *.mp4
 ```
 
-Le voyage porte les métadonnées `Date` et `Start` (première étape), `End` (dernière étape plus ses nuits) et `Category: findpenguins`. Toutes les images (photos, couvertures, avatars, cartes) sont converties en WebP sans perte; les vidéos sont conservées telles quelles.
+Le voyage porte les métadonnées `Date` (première étape), `EndDate` (dernière étape plus ses nuits), `Transport` (ex. `bus 682 km; flight 581 km`) et `Category: findpenguins`; ses tags sont `findpenguins`, `trip` et les pays. Les étapes ont le tag `footprint`. Toutes les images (photos, couvertures, avatars, cartes) sont converties en WebP sans perte; les vidéos sont conservées telles quelles.
 
 Les cartes de route mesurent 1200×800 pixels. Un voyage sans trace GPX valide n'a pas de carte de route.
 

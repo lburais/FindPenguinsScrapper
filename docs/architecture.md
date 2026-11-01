@@ -7,7 +7,7 @@ This document describes the current data flow and generated outputs.
 - Authenticate and load dynamic FindPenguins profile, trip and footprint pages.
 - Save profile/trip data and downloaded media locally.
 - Generate a profile XML index and an enriched GPX file per trip.
-- Optionally generate a standalone HTML travel book and Pelican RST sources.
+- Generate Pelican RST articles for trips and footprints.
 
 ## Main Components
 
@@ -15,7 +15,7 @@ This document describes the current data flow and generated outputs.
 - `fp_config.py`: site endpoints, request headers and XML namespaces.
 - `fp_utils.py`: login, Playwright setup, page loading, downloads and serialization helpers.
 - `fp_parsers.py`: profile, trip, insight and footprint extraction.
-- `fp_writers.py`: XML/GPX serialization, HTML travel books, Pelican RST pages and route-map PNGs.
+- `fp_writers.py`: XML/GPX serialization, Pelican RST articles and route-map WebP images.
 - `fp_elevation.py`: OpenTopoData SRTM90m enrichment for GPX track-point elevations.
 
 ## Runtime Data Flow
@@ -35,7 +35,6 @@ flowchart TD
   I --> L[Update profile XML]
   K --> M{Requested formats}
   L --> M
-  M --> N[Optional HTML travel book]
   M --> O[Optional Pelican trip and footprint RST]
 ```
 
@@ -55,7 +54,7 @@ For profile id `<uid>`, the primary archive is written under `--output`:
 Pelican articles are written under `--content` (default
 `../website/content/articles/findpenguins`): `<content>/<uid>/<trip-slug>/trip.rst` and one
 `footprint_N/footprint.rst` per footprint. Media and maps are copied beside the sources. The trip
-article has `Category: findpenguins`, `Template: trip` and `Date`/`Start`/`End` metadata; the
+article has `Category: findpenguins`, `Template: trip` and `Date` (first footprint), `EndDate` (last footprint plus its nights) and `Transport` metadata; trip tags are `findpenguins`, `trip` and the countries, and footprint tags include `footprint`; the
 website builds its trip index from these articles.
 
 All downloaded and generated images are stored as lossless WebP; videos are untouched.
