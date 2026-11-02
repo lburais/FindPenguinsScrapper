@@ -78,13 +78,14 @@ python -m playwright install chromium
 ## ⚙️ Utilisation
 
 ```bash
-python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html]
+python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force]
 ```
 
 - `profiles.json` : fichier de profils (obligatoire).
 - `-o`, `--output` : archive XML, GPX et médias (défaut `output`).
 - `--content` : articles Pelican (reStructuredText) générés (défaut `../website/content/articles/findpenguins`).
 - `-t`, `--trip` : ne scraper que le voyage portant ce slug (défaut : tous).
+- `--force` : vider `--output` et `--content` avant de scraper (avec `--trip`, seul ce voyage est supprimé).
 - `--save-html` : conserver les pages HTML brutes (débogage).
 
 ### Fichier de profils
@@ -104,6 +105,8 @@ Toutes les entrées autres que `settings` sont des profils, tous scrapés à cha
 
 | Réglage | Défaut | Rôle |
 |---|---|---|
+| `small_size` | `128` | Côté maximal (px) des photos de profil / compagnons (remplacent l'original). |
+| `large_size` | `1600` | Côté maximal (px) des cartes, de la couverture `_large` et des photos `_thumb`. |
 | `map_background` | `transparent` | Fond de la carte de route : `transparent`, `satellite` ou `street` (Esri). |
 | `footprint_bubbles` | `false` | Bulles numérotées des étapes sur la carte. |
 
@@ -140,6 +143,15 @@ content/
 ```
 
 Le voyage porte les métadonnées `Date` (première étape), `EndDate` (dernière étape plus ses nuits), `Transport` (ex. `bus 682 km; flight 581 km`) et `Category: findpenguins`; ses tags sont `findpenguins`, `trip` et les pays. Les étapes ont le tag `footprint`. Toutes les images (photos, couvertures, avatars, cartes) sont converties en WebP sans perte; les vidéos sont conservées telles quelles.
+
+Les articles conservent l'image originale et ajoutent des variantes redimensionnées (jamais agrandies), référencées par les métadonnées :
+
+| Image | Variantes créées | Utilisée dans le RST |
+|---|---|---|
+| Photo de profil / compagnon | aucune (taille `small_size` à la place de l'original) | `Companions` (photo du profil, partagée par tous les voyages) |
+| Couverture du voyage | `_large` | `TripImage` |
+| Cartes du voyage et du pays | aucune (`map_trip.webp`, `map_country.webp` en taille `large_size` à la place de l'original) | `TripMap`, `map_country.webp` (thème) |
+| Photo d'étape | `_thumb` (taille `large_size`) | `Photo` (original, « Ouvrir la photo »); le thème déduit `_thumb` du nom (vignettes et carrousel) |
 
 Les cartes de route mesurent 1200×800 pixels. Un voyage sans trace GPX valide n'a pas de carte de route.
 

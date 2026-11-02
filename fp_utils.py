@@ -209,6 +209,53 @@ def to_webp(path):
     return webp_path
 
 
+def variant_path(path, suffix):
+    """! @brief Return the path of a size variant, e.g. `a.webp` -> `a_large.webp`."""
+    root, ext = os.path.splitext(path)
+    return f"{root}_{suffix}{ext}"
+
+
+def make_variant(path, suffix, max_size):
+    """! @brief Create a lossless WebP copy of an image whose longest side is at most `max_size`.
+    The original is kept and never upscaled; an existing variant of the right size is reused.
+    @param path Source WebP image path.
+    @param suffix Variant suffix (e.g. "small", "medium", "large").
+    @param max_size Maximum width/height in pixels.
+    @return Path of the variant file.
+    """
+    target = variant_path(path, suffix)
+    with Image.open(path) as image:
+        expected = image.size
+        if max(expected) > max_size:
+            ratio = max_size / max(expected)
+            expected = (max(1, round(expected[0] * ratio)), max(1, round(expected[1] * ratio)))
+        if os.path.isfile(target):
+            with Image.open(target) as existing:
+                if existing.size == expected:
+                    return target
+        resized = image.copy()
+        if resized.size != expected:
+            resized = resized.resize(expected, Image.LANCZOS)
+        resized.save(target, "WEBP", lossless=True, quality=100, method=4, exact=True)
+    return target
+
+
+def shrink_image(path, max_size):
+    """! @brief Downscale a WebP image in place (lossless) so its longest side is at most `max_size`.
+    Images already small enough are left untouched.
+    @param path WebP image path.
+    @param max_size Maximum width/height in pixels.
+    @return The same path.
+    """
+    with Image.open(path) as image:
+        if max(image.size) <= max_size:
+            return path
+        ratio = max_size / max(image.size)
+        resized = image.resize((max(1, round(image.width * ratio)), max(1, round(image.height * ratio))), Image.LANCZOS)
+    resized.save(path, "WEBP", lossless=True, quality=100, method=4, exact=True)
+    return path
+
+
 def download_image(img_url, dest_folder, prefix="img"):
     """! @brief Download one image and save it to local storage.
     @param img_url Remote image URL.

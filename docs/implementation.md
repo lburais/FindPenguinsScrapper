@@ -6,15 +6,18 @@ This guide documents the current CLI, scraping pipeline and output behavior.
 
 Main script: `findpenguins_scrapper.py`.
 
-Usage: `python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html]`.
+Usage: `python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force]`.
 It maps profile names to objects with `id`, `username`, and optional `password`; every profile is
 scraped. `--output` (default `output`) is the archive directory for XML, GPX and downloaded media,
-`--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory, and
-`-t`/`--trip SLUG` scrapes only the matching trip slug (default: all trips), and
-`--save-html` saves fetched source HTML for debugging. An optional `settings` entry configures the rest:
+`--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory,
+`-t`/`--trip SLUG` scrapes only the matching trip slug (default: all trips), `--save-html` saves
+fetched source HTML for debugging, and `--force` clears the output and content folders first (only
+the selected trip's folders and GPX when `--trip` is given). An optional `settings` entry configures the rest:
 
 | Setting | Behavior |
 |---------|----------|
+| `small_size` | Max side in px of profile/companion pictures (stored in place of the original); default `128`. |
+| `large_size` | Max side in px of maps, the `_large` trip cover and `_thumb` photos; default `1600`. |
 | `map_background` | Route-map background: `transparent` (default), `satellite`, or `street`. |
 | `footprint_bubbles` | Draw numbered footprint locations on the route map; default `false`. |
 
@@ -49,6 +52,10 @@ See [`xml-gpx-structure.md`](./xml-gpx-structure.md) for the serialized structur
 [`data-fields.md`](./data-fields.md) for field provenance.
 
 ## Pelican Article Export
+
+Originals are kept and resized lossless WebP variants (never upscaled) are created next to them.
+Companions are represented by their profile picture (`<uid>/<uid>_profile_*.webp`, downloaded once
+and shared by all trips), shrunk in place to `small_size`. `TripImage` uses `_large`; `TripMap` (`map_trip.webp`) and `map_country.webp` are shrunk in place to `large_size`. Footprint photos keep the original in `Photo`; the theme derives the `_thumb` variant (`large_size`) from each name for thumbnails and the carousel.
 
 The scraper always generates, under `--content`:
 

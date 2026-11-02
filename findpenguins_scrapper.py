@@ -2,7 +2,7 @@
 """! @file findpenguins_scrapper.py
 @brief Entrypoint and orchestration for FindPenguins scraping/export.
 
-Usage: python findpenguins_scrapper.py PROFILES.json [--output DIR] [--content DIR] [--trip SLUG] [--save-html]
+Usage: python findpenguins_scrapper.py PROFILES.json [--output DIR] [--content DIR] [--trip SLUG] [--save-html] [--force]
 
 The profiles file maps profile names to {id, username, password}. An optional
 "settings" entry configures the remaining options (see DEFAULT_SETTINGS). For every profile the
@@ -32,6 +32,8 @@ from fp_writers import (
 
 ## Default run settings; override them with a "settings" entry in the profiles file.
 DEFAULT_SETTINGS = {
+    "small_size": 128,
+    "large_size": 1600,
     "map_background": "transparent",
     "footprint_bubbles": False,
 }
@@ -120,8 +122,11 @@ def process_profile(
                 if insights_companions:
                     for companion in insights_companions:
                         try:
+                            # A companion is represented by its profile picture, shared by all trips.
                             local_avatar = download_image(
-                                companion["avatar"], trip_dir, prefix=f"companion_{companion['uid']}"
+                                companion["avatar"],
+                                os.path.join(output, companion["uid"]),
+                                prefix=f"{companion['uid']}_profile",
                             )
                             companion["picture"] = os.path.relpath(local_avatar, output_dir)
                         except Exception as e:
@@ -202,16 +207,54 @@ def load_profiles(profiles_file):
     return profiles, settings
 
 
-def scrapper(profiles_file, output, content, trip=None, save_html=False):
+def clear_folders(output, content, profiles, trip=None):
+    """! @brief Delete previously generated output so the scrape starts from scratch.
+    Without `trip` the whole output and content folders are removed; with `trip` only the
+    folders and GPX file of that trip are removed for each profile.
+    @param output Archive directory.
+    @param content Pelican articles directory.
+    @param profiles List of (id, username, password) tuples.
+    @param trip Optional slug of the only trip being scraped.
+    @exception ValueError Raised when a folder to clear is a filesystem root or the home directory.
+    """
+    for folder in (output, content):
+        resolved = os.path.realpath(folder)
+        if resolved in (os.path.sep, os.path.realpath(os.path.expanduser("~"))):
+            raise ValueError(f"Refusing to clear {folder}")
+
+    if not trip:
+        for folder in (output, content):
+            if os.path.isdir(folder):
+                print(f"Clearing {folder}")
+                shutil.rmtree(folder)
+        return
+
+    for profile_id, _, _ in profiles:
+        for path in (
+            os.path.join(output, profile_id, trip),
+            os.path.join(content, profile_id, trip),
+        ):
+            if os.path.isdir(path):
+                print(f"Clearing {path}")
+                shutil.rmtree(path)
+        gpx = os.path.join(output, profile_id, trip + ".gpx")
+        if os.path.isfile(gpx):
+            os.remove(gpx)
+
+
+def scrapper(profiles_file, output, content, trip=None, save_html=False, force=False):
     """! @brief Scrape every profile of the profiles file and generate the Pelican articles.
     @param profiles_file JSON profiles file path.
     @param output Archive directory for XML, GPX and downloaded media.
     @param content Pelican articles directory.
     @param trip Optional slug of the only trip to scrape.
     @param save_html Whether to save downloaded HTML for debugging.
+    @param force Whether to clear the output and content folders (only the selected trip when `trip` is set) first.
     @return List of (user_data, trips) tuples for successfully scraped profiles.
     """
     profiles, settings = load_profiles(profiles_file)
+    if force:
+        clear_folders(output, content, profiles, trip)
     settings.update(output=output, trip=trip, save_html=save_html)
 
     # Process each profile, collecting results for merged XML
@@ -237,15 +280,17 @@ def scrapper(profiles_file, output, content, trip=None, save_html=False):
         merged_tree.write(merged_xml, encoding="utf-8", xml_declaration=True)
         print(f"✅ Merged XML: {merged_xml}")
 
-    generate_rst_outputs(content, output, collected)
+    sizes = {name: settings[f"{name}_size"] for name in ("small", "large")}
+    generate_rst_outputs(content, output, collected, sizes)
     return collected
 
 
-def generate_rst_outputs(content_dir, output, profiles_data):
+def generate_rst_outputs(content_dir, output, profiles_data, sizes):
     """! @brief Generate Pelican articles (reStructuredText) after scraping.
     @param content_dir Pelican articles source directory.
     @param output Root directory containing scraped profile assets.
     @param profiles_data List of (user_data, trips) tuples returned by process_profile.
+    @param sizes Maximum pixel size of the "small" and "large" images.
     @return None
     """
     if not profiles_data:
@@ -255,7 +300,7 @@ def generate_rst_outputs(content_dir, output, profiles_data):
         profile_dir = os.path.join(output, user_data["uid"])
         for trip in trips:
             trip_dir = os.path.join(profile_dir, trip["slug"])
-            build_trip_rst(content_dir, trip_dir, user_data, trip, trip.get("footprints", []))
+            build_trip_rst(content_dir, trip_dir, user_data, trip, trip.get("footprints", []), sizes)
 
 
 # ##############################################################################################
@@ -288,5 +333,9 @@ if __name__ == "__main__":
         "--save-html", 
         action="store_true", 
         help="Save fetched HTML files")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Clear the output and content folders before scraping (only the --trip trip when given)")
     arguments = parser.parse_args()
-    scrapper(arguments.profiles, arguments.output, arguments.content, arguments.trip, arguments.save_html)
+    scrapper(arguments.profiles, arguments.output, arguments.content, arguments.trip, arguments.save_html, arguments.force)

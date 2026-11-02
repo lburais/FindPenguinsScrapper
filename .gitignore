@@ -1,13 +1,6 @@
 .vscode/
 __pycache__/
-output/
-pages/
 venv/
-.gitignore
-.tile-cache/
-findpenguins_scrapper.dist/
-findpenguins_scrapper.build/
-findpenguins_scrapper.onefile-build/
 profiles.json
+franklin.json
 .gitignore
-nuitka-crash-report.xml

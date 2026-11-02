@@ -17,7 +17,7 @@ from functools import lru_cache
 from math import radians, sin, cos, sqrt, atan2, isfinite
 
 from fp_config import GPX_NS, XSI_NS
-from fp_utils import gpx_tag, add_text_element, format_tree, to_webp
+from fp_utils import gpx_tag, add_text_element, format_tree, to_webp, make_variant, shrink_image
 from fp_elevation import fetch_elevations
 
 
@@ -450,6 +450,23 @@ def _copy_media(media_paths, destination_dir):
     return copied_paths
 
 
+def _copy_image(image_path, destination_dir, sizes, variants):
+    """! @brief Copy an image and create its size variants next to the copy.
+    @param image_path Source image path.
+    @param destination_dir Destination folder.
+    @param sizes Mapping of size name ("small", "large") to maximum pixel size.
+    @param variants Mapping of variant suffix to the size name it uses.
+    @return Tuple (original file name, {suffix: variant file name}).
+    """
+    name = _copy_media([image_path], destination_dir)[0]
+    copied_path = os.path.join(destination_dir, os.path.basename(image_path))
+    created = {
+        suffix: os.path.basename(make_variant(copied_path, suffix, sizes[size])).replace(" ", "%20")
+        for suffix, size in variants.items()
+    }
+    return name, created
+
+
 @lru_cache(maxsize=1)
 def _load_country_boundaries():
     """! @brief Load and cache Natural Earth country boundaries."""
@@ -789,13 +806,14 @@ def save_trip_route_map(
     return output_image
 
 
-def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
+def _footprint_gpx_fields(footprint, footprint_dir, sizes, trip_days=""):
     """! @brief Map a footprint to the GPX waypoint fields used as Pelican metadata.
     Every exported metadata field except `desc` (the footprint text, used as page body)
     is returned. The map image is saved in the footprint directory.
     Media are copied into the footprint folder and listed by file name.
     @param footprint Normalized footprint data.
     @param footprint_dir Destination folder of the generated page.
+    @param sizes Maximum pixel size of the "small" and "large" image variants.
     @return Dictionary of metadata name -> value.
     """
     references = ", ".join(
@@ -805,11 +823,17 @@ def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
     lat = str(footprint.get("lat", "")).strip()
     lon = str(footprint.get("lon", "")).strip()
     if lat and lon:
-        save_full_country_map(
+        country_map = save_full_country_map(
             lat,
             lon,
             output_image=os.path.join(footprint_dir, "map_country.png"),
         )
+        shrink_image(country_map, sizes["large"])
+
+    photos = []
+    for photo in footprint.get("photos", []):
+        name, _ = _copy_image(photo, footprint_dir, sizes, {"thumb": "large"})
+        photos.append(name)
 
     return {
         "Lat": footprint.get("lat", ""),
@@ -826,7 +850,7 @@ def _footprint_gpx_fields(footprint, footprint_dir, trip_days=""):
         "City": footprint.get("city", ""),
         "Text-private": footprint.get("text-private", ""),
         "Reference": references,
-        "Photo": ", ".join(_copy_media(footprint.get("photos", []), footprint_dir)),
+        "Photo": ", ".join(photos),
         "Video": ", ".join(_copy_media(footprint.get("videos", []), footprint_dir)),
         "Gpx": ", ".join(_copy_media(footprint.get("gpx", []), footprint_dir)),
         "Pdf": ", ".join(_copy_media(footprint.get("pdf", []), footprint_dir)),
@@ -903,9 +927,12 @@ def _trip_date_range(footprints):
     return min(starts).isoformat(), max(ends).isoformat()
 
 
-def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
+def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints, sizes):
     """! @brief Build Pelican articles (reStructuredText) for a trip and its footprints.
     @param content_dir Pelican articles source directory.
+    @param sizes Maximum pixel size of the "small" and "large" image variants.
+    Originals are copied next to their variants; the metadata references the variants
+    (`_large` for the trip image, `_thumb` for photos). Companion pictures, trip maps and country maps are shrunk in place.
     """
     uid = str(user_data.get("uid", "")).strip()
     trip_slug = str(trip.get("slug", "")).strip()
@@ -919,7 +946,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         image_path = str(trip["image"])
         if not image_path.startswith(("http://", "https://")):
             image_path = os.path.join(profile_dir, image_path)
-            trip_image = _copy_media([image_path], rst_trip_dir)[0]
+            trip_image = _copy_image(image_path, rst_trip_dir, sizes, {"large": "large"})[1]["large"]
         else:
             trip_image = image_path
 
@@ -929,6 +956,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         if not os.path.isabs(route_map_path):
             route_map_path = os.path.join(profile_dir, route_map_path)
         trip_map = _copy_media([route_map_path], rst_trip_dir)[0]
+        shrink_image(os.path.join(rst_trip_dir, os.path.basename(route_map_path)), sizes["large"])
 
     companion_images = []
     for companion in trip.get("companions") or []:
@@ -936,8 +964,12 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         if not picture:
             continue
         if not picture.startswith(("http://", "https://")):
-            picture = os.path.join(profile_dir, picture)
-            picture = _copy_media([picture], rst_trip_dir)[0]
+            # The companion is represented by its profile picture, stored once under its profile folder.
+            companion_dir = os.path.join(content_dir, str(companion.get("uid") or uid).strip())
+            picture_path = os.path.normpath(os.path.join(profile_dir, picture))
+            name_on_disk = _copy_media([picture_path], companion_dir)[0].replace("%20", " ")
+            small_path = shrink_image(os.path.join(companion_dir, name_on_disk), sizes["small"])
+            picture = os.path.relpath(small_path, rst_trip_dir).replace(os.sep, "/").replace(" ", "%20")
         name = str(companion.get("name") or companion.get("uid") or "").strip()
         companion_images.append(f"{name}|{picture}")
 
@@ -999,19 +1031,17 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints):
         city = str(footprint.get("city", "")).strip()
         country = str(footprint.get("country", "")).strip()
         location = ", ".join(part for part in (city, country) if part)
-        # Body is the GPX desc only (the footprint text); other GPX fields are metadata.
         text = str(footprint.get("text", "")).strip()
         content = [
             _rst_metadata(
                 Title=title,
                 Date=footprint.get("date", ""),
                 Slug=f"{uid}-{trip_slug}-etape-{index}",
-                Category=trip_title,
-                # Tags=", ".join(part for part in ("findpenguins", city, country) if part),
+                Category="footprint",
                 Tags=", ".join(part for part in ("findpenguins", "footprint", country) if part),
                 Summary=location or footprint.get("weather", ""),
                 Template="findpenguins_footprint",
-                **_footprint_gpx_fields(footprint, footprint_dir, trip.get("days", "")),
+                **_footprint_gpx_fields(footprint, footprint_dir, sizes, trip.get("days", "")),
             ),
             "",
             _text_with_rst_references(text, footprint.get("references", [])),
