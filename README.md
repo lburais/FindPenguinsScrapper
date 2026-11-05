@@ -106,7 +106,7 @@ Toutes les entrées autres que `settings` sont des profils, tous scrapés à cha
 | Réglage | Défaut | Rôle |
 |---|---|---|
 | `small_size` | `128` | Côté maximal (px) des photos de profil / compagnons (remplacent l'original). |
-| `large_size` | `1600` | Côté maximal (px) des cartes, de la couverture `_large` et des photos `_thumb`. |
+| `large_size` | `1600` | Côté maximal (px) des cartes, de la couverture et des photos `_thumb`. |
 | `map_background` | `transparent` | Fond de la carte de route : `transparent`, `satellite` ou `street` (Esri). |
 | `footprint_bubbles` | `false` | Bulles numérotées des étapes sur la carte. |
 
@@ -135,6 +135,7 @@ content/
 └── pseudo_findpenguins/
     └── voyage-islande/
         ├── trip.rst            # Article du voyage (Category: findpenguins, Date/EndDate)
+        ├── cover_*.webp        # Couverture (taille `large_size`, sans suffixe)
         ├── map_trip.webp
         └── footprint_1/
             ├── footprint.rst   # Article de l'étape (Category: titre du voyage)
@@ -149,7 +150,7 @@ Les articles conservent l'image originale et ajoutent des variantes redimensionn
 | Image | Variantes créées | Utilisée dans le RST |
 |---|---|---|
 | Photo de profil / compagnon | aucune (taille `small_size` à la place de l'original) | `Companions` (photo du profil, partagée par tous les voyages) |
-| Couverture du voyage | `_large` | `TripImage` |
+| Couverture du voyage | aucune (`cover_*.webp` en taille `large_size` à la place de l'original, sans suffixe `_large`) | `TripImage` |
 | Cartes du voyage et du pays | aucune (`map_trip.webp`, `map_country.webp` en taille `large_size` à la place de l'original) | `TripMap`, `map_country.webp` (thème) |
 | Photo d'étape | `_thumb` (taille `large_size`) | `Photo` (original, « Ouvrir la photo »); le thème déduit `_thumb` du nom (vignettes et carrousel) |
 

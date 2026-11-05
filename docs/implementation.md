@@ -17,7 +17,7 @@ the selected trip's folders and GPX when `--trip` is given). An optional `settin
 | Setting | Behavior |
 |---------|----------|
 | `small_size` | Max side in px of profile/companion pictures (stored in place of the original); default `128`. |
-| `large_size` | Max side in px of maps, the `_large` trip cover and `_thumb` photos; default `1600`. |
+| `large_size` | Max side in px of maps, the trip cover and `_thumb` photos; default `1600`. |
 | `map_background` | Route-map background: `transparent` (default), `satellite`, or `street`. |
 | `footprint_bubbles` | Draw numbered footprint locations on the route map; default `false`. |
 
@@ -55,7 +55,7 @@ See [`xml-gpx-structure.md`](./xml-gpx-structure.md) for the serialized structur
 
 Originals are kept and resized lossless WebP variants (never upscaled) are created next to them.
 Companions are represented by their profile picture (`<uid>/<uid>_profile_*.webp`, downloaded once
-and shared by all trips), shrunk in place to `small_size`. `TripImage` uses `_large`; `TripMap` (`map_trip.webp`) and `map_country.webp` are shrunk in place to `large_size`. Footprint photos keep the original in `Photo`; the theme derives the `_thumb` variant (`large_size`) from each name for thumbnails and the carousel.
+and shared by all trips), shrunk in place to `small_size`. `TripImage` (`cover_*.webp`, no `_large` suffix), `TripMap` (`map_trip.webp`) and `map_country.webp` are shrunk in place to `large_size`. Footprint photos keep the original in `Photo`; the theme derives the `_thumb` variant (`large_size`) from each name for thumbnails and the carousel.
 
 The scraper always generates, under `--content`:
 

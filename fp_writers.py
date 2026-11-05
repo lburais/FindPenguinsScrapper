@@ -932,7 +932,8 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints, sizes):
     @param content_dir Pelican articles source directory.
     @param sizes Maximum pixel size of the "small" and "large" image variants.
     Originals are copied next to their variants; the metadata references the variants
-    (`_large` for the trip image, `_thumb` for photos). Companion pictures, trip maps and country maps are shrunk in place.
+    (`_thumb` for photos). Companion pictures, the trip cover, trip maps and country maps are shrunk in place
+    (the cover keeps its name, without any `_large` suffix).
     """
     uid = str(user_data.get("uid", "")).strip()
     trip_slug = str(trip.get("slug", "")).strip()
@@ -946,7 +947,8 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints, sizes):
         image_path = str(trip["image"])
         if not image_path.startswith(("http://", "https://")):
             image_path = os.path.join(profile_dir, image_path)
-            trip_image = _copy_image(image_path, rst_trip_dir, sizes, {"large": "large"})[1]["large"]
+            trip_image = _copy_media([image_path], rst_trip_dir)[0]
+            shrink_image(os.path.join(rst_trip_dir, os.path.basename(image_path)), sizes["large"])
         else:
             trip_image = image_path
 
