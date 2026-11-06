@@ -107,7 +107,7 @@ def process_profile(
                 image_url = parse_trip_image(soup)
                 if image_url:
                     try:
-                        local_image = download_image(image_url, trip_dir, prefix="cover")
+                        local_image = download_image(image_url, trip_dir, filename="cover_trip", refresh=True)
                         trip["image"] = os.path.relpath(local_image, output_dir)
                     except Exception as e:
                         print(f"  WARNING: trip image download failed: {e}")
@@ -141,19 +141,22 @@ def process_profile(
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
 
                 build_trip_gpx(trip_gpx, user_data, trip, footprints)
-                route_map = os.path.join(trip_dir, "map_trip.png")
-                try:
-                    route_map = save_trip_route_map(
-                        trip_gpx,
-                        footprints,
-                        route_map,
-                        background=map_background,
-                        show_footprint_bubbles=show_footprint_bubbles,
-                    )
-                    if route_map:
-                        trip["route_map"] = os.path.relpath(route_map, output_dir)
-                except (OSError, ET.ParseError, ValueError, requests.RequestException) as exc:
-                    print(f"  - WARNING: unable to create satellite route map for {trip['title']}: {exc}")
+                for key, filename, background, bubbles in (
+                    ("route_map", "map_trip.png", map_background, show_footprint_bubbles),
+                    ("satellite_map", "satellite_trip.png", "satellite", True),
+                ):
+                    try:
+                        route_map = save_trip_route_map(
+                            trip_gpx,
+                            footprints,
+                            os.path.join(trip_dir, filename),
+                            background=background,
+                            show_footprint_bubbles=bubbles,
+                        )
+                        if route_map:
+                            trip[key] = os.path.relpath(route_map, output_dir)
+                    except (OSError, ET.ParseError, ValueError, requests.RequestException) as exc:
+                        print(f"  - WARNING: unable to create {filename} for {trip['title']}: {exc}")
 
                 old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
                 if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):

@@ -31,7 +31,7 @@ the selected trip's folders and GPX when `--trip` is given). An optional `settin
    trip companions; `parse_trip_image` finds the trip cover image.
 5. `build_trip_gpx` preserves the downloaded track, rebuilds coordinate-bearing waypoints, writes
    trip and footprint extensions, and enriches track-point elevations.
-6. A route-map PNG is generated after the final GPX update when it contains a valid track.
+6. Route maps are generated after the final GPX update when it contains a valid track.
 7. The profile XML index is updated with the trip and companion data.
 8. Optional HTML or RST outputs are generated after scraping completes.
 
@@ -55,7 +55,10 @@ See [`xml-gpx-structure.md`](./xml-gpx-structure.md) for the serialized structur
 
 Originals are kept and resized lossless WebP variants (never upscaled) are created next to them.
 Companions are represented by their profile picture (`<uid>/<uid>_profile_*.webp`, downloaded once
-and shared by all trips), shrunk in place to `small_size`. `TripImage` (`cover_*.webp`, no `_large` suffix), `TripMap` (`map_trip.webp`) and `map_country.webp` are shrunk in place to `large_size`. Footprint photos keep the original in `Photo`; the theme derives the `_thumb` variant (`large_size`) from each name for thumbnails and the carousel.
+and shared by all trips), shrunk in place to `small_size`. `TripImage` (`cover_trip.webp`),
+`TripMap` (`map_trip.webp`), `TripSatelliteMap` (`satellite_trip.webp`) and `map_country.webp`
+are shrunk in place to `large_size`. Footprint photos keep the original in `Photo`; the theme
+derives the `_thumb` variant (`large_size`) from each name for thumbnails and the carousel.
 
 The scraper always generates, under `--content`:
 
@@ -67,6 +70,9 @@ The scraper always generates, under `--content`:
 The RST export does not generate a user/profile page or a global FindPenguins index. A consuming
 Pelican site can build its own index from trip pages using their `Category: findpenguins` and trip metadata (`Date`, `EndDate`, `Transport`).
 The `TripMap` is generated as `map_trip.webp` from the GPX track after the GPX is finalized.
+The separate `TripSatelliteMap` is generated as `satellite_trip.webp`, always with an Esri
+satellite background and numbered footprint bubbles. Each map is generated independently;
+a satellite request failure is reported without discarding the main map.
 
 Trip maps are 1200×800 WebP images with a white 4px route line. Their background defaults to transparent;
 `map_background: satellite` or `street` requests an Esri map image. These backgrounds require

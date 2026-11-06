@@ -256,11 +256,13 @@ def shrink_image(path, max_size):
     return path
 
 
-def download_image(img_url, dest_folder, prefix="img"):
+def download_image(img_url, dest_folder, prefix="img", filename=None, refresh=False):
     """! @brief Download one image and save it to local storage.
     @param img_url Remote image URL.
     @param dest_folder Destination directory path.
     @param prefix Filename prefix prepended to saved image name.
+    @param filename Optional filename stem to use instead of the URL-derived name.
+    @param refresh Whether to download again when the destination already exists.
     @return Path of the saved lossless WebP file.
     @exception requests.RequestException Raised on HTTP failures.
     """
@@ -273,11 +275,14 @@ def download_image(img_url, dest_folder, prefix="img"):
     img_url = normalize_photo_url(img_url)
 
     parsed = urlparse(img_url)
-    filename = os.path.basename(parsed.path) or "image.jpg"
-    local_name = f"{prefix}_{filename}"
+    source_name = os.path.basename(parsed.path) or "image.jpg"
+    local_name = (
+        f"{filename}{os.path.splitext(source_name)[1] or '.jpg'}"
+        if filename else f"{prefix}_{source_name}"
+    )
     local_path = os.path.join(dest_folder, local_name)
     webp_path = os.path.splitext(local_path)[0] + ".webp"
-    if os.path.exists(webp_path):
+    if not refresh and os.path.exists(webp_path):
         return webp_path
 
     resp = requests.get(img_url, headers=HEADERS, stream=True, timeout=20)

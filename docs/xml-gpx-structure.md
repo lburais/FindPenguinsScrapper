@@ -48,6 +48,7 @@ Trip fields intentionally excluded from XML (internal processing only):
 - `km`
 - `is_current`
 - `route_map`
+- `satellite_map`
 - trip insight details (`description`, `countries`, `distance`, `transports`)
 
 `days` (total number of trip days) is written as `<days>` in the profile XML and GPX trip metadata

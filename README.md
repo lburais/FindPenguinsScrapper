@@ -107,8 +107,8 @@ Toutes les entrées autres que `settings` sont des profils, tous scrapés à cha
 |---|---|---|
 | `small_size` | `128` | Côté maximal (px) des photos de profil / compagnons (remplacent l'original). |
 | `large_size` | `1600` | Côté maximal (px) des cartes, de la couverture et des photos `_thumb`. |
-| `map_background` | `transparent` | Fond de la carte de route : `transparent`, `satellite` ou `street` (Esri). |
-| `footprint_bubbles` | `false` | Bulles numérotées des étapes sur la carte. |
+| `map_background` | `transparent` | Fond de `map_trip.webp` : `transparent`, `satellite` ou `street` (Esri). |
+| `footprint_bubbles` | `false` | Bulles numérotées des étapes sur `map_trip.webp`. |
 
 ---
 
@@ -123,7 +123,8 @@ output/
     ├── voyage-islande.gpx      # Parcours avec waypoints enrichis
     └── voyage-islande/         # Médias du voyage (images en WebP sans perte)
         ├── map_trip.webp
-        ├── cover_*.webp
+        ├── satellite_trip.webp  # Carte satellite avec étapes numérotées
+        ├── cover_trip.webp
         ├── *.webp              # Photos et images des compagnons
         └── *.mp4
 ```
@@ -135,8 +136,9 @@ content/
 └── pseudo_findpenguins/
     └── voyage-islande/
         ├── trip.rst            # Article du voyage (Category: findpenguins, Date/EndDate)
-        ├── cover_*.webp        # Couverture (taille `large_size`, sans suffixe)
+        ├── cover_trip.webp      # Couverture (taille `large_size`)
         ├── map_trip.webp
+        ├── satellite_trip.webp
         └── footprint_1/
             ├── footprint.rst   # Article de l'étape (Category: titre du voyage)
             ├── map_country.webp
@@ -150,11 +152,14 @@ Les articles conservent l'image originale et ajoutent des variantes redimensionn
 | Image | Variantes créées | Utilisée dans le RST |
 |---|---|---|
 | Photo de profil / compagnon | aucune (taille `small_size` à la place de l'original) | `Companions` (photo du profil, partagée par tous les voyages) |
-| Couverture du voyage | aucune (`cover_*.webp` en taille `large_size` à la place de l'original, sans suffixe `_large`) | `TripImage` |
-| Cartes du voyage et du pays | aucune (`map_trip.webp`, `map_country.webp` en taille `large_size` à la place de l'original) | `TripMap`, `map_country.webp` (thème) |
+| Couverture du voyage | aucune (`cover_trip.webp` en taille `large_size`) | `TripImage` |
+| Cartes du voyage et du pays | aucune (`map_trip.webp`, `satellite_trip.webp`, `map_country.webp` en taille `large_size`) | `TripMap`, `TripSatelliteMap`, `map_country.webp` (thème) |
 | Photo d'étape | `_thumb` (taille `large_size`) | `Photo` (original, « Ouvrir la photo »); le thème déduit `_thumb` du nom (vignettes et carrousel) |
 
-Les cartes de route mesurent 1200×800 pixels. Un voyage sans trace GPX valide n'a pas de carte de route.
+Les cartes de route mesurent 1200×800 pixels. `satellite_trip.webp` utilise toujours
+un fond satellite Esri et des bulles numérotées pour les étapes ; elle nécessite
+un accès réseau. En cas d'échec, la carte principale reste disponible. Un voyage
+sans trace GPX valide n'a pas de carte de route.
 
 ---
 

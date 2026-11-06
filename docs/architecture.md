@@ -49,7 +49,8 @@ For profile id `<uid>`, the primary archive is written under `--output`:
 - `<output>/<uid>/<uid>.xml`: profile and trip index.
 - `<output>/<uid>/<trip-slug>.gpx`: enriched route and footprint waypoints.
 - `<output>/<uid>/<trip-slug>/`: downloaded route source, trip image, footprint photos/videos,
-  optional fetched HTML, and `map_trip.webp` when a valid route is available.
+  optional fetched HTML, and `map_trip.webp` plus `satellite_trip.webp` when a valid
+  route is available and the satellite imagery request succeeds.
 
 Pelican articles are written under `--content` (default
 `../website/content/articles/findpenguins`): `<content>/<uid>/<trip-slug>/trip.rst` and one

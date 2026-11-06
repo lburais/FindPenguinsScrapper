@@ -117,7 +117,7 @@ as `picture`. When found, these replace the thumbnail-only companions of the pro
 ### Trip main image (`parse_trip_image`)
 
 On the trip page, the cover image is the `background-image: url(...)` of `#tripBox .titleBox`. It is
-downloaded to `<trip_dir>/cover_*` and its relative path stored in `trip["image"]`. Trips using the
+downloaded to `<trip_dir>/cover_trip.webp` and its relative path stored in `trip["image"]`. Trips using the
 default placeholder (`trip_preview.png`) have no main image and the field stays empty.
 
 ## 5. Footprints (`parse_footprints` and `parse_trip`)

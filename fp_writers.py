@@ -255,6 +255,7 @@ def build_trip_gpx(gpx_path, user_data, trip, footprints):
             "is_current",
             "url",
             "route_map",
+            "satellite_map",
         ] + TRIP_DETAIL_KEYS:
             continue
         print(f"    - trip[{key}] : {value}")
@@ -378,7 +379,7 @@ def build_user_xml(user_data, trips):
     for trip in trips:
         trip_el = ET.SubElement(trips_el, "trip")
         for key, value in trip.items():
-            if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "route_map"] + TRIP_DETAIL_KEYS:
+            if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "route_map", "satellite_map"] + TRIP_DETAIL_KEYS:
                 continue
             print(f"    - trip[{key}] : {value}")
             add_text_element(trip_el, key, value, namespace=None)
@@ -952,13 +953,14 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints, sizes):
         else:
             trip_image = image_path
 
-    trip_map = ""
-    route_map_path = str(trip.get("route_map") or "").strip()
-    if route_map_path:
-        if not os.path.isabs(route_map_path):
-            route_map_path = os.path.join(profile_dir, route_map_path)
-        trip_map = _copy_media([route_map_path], rst_trip_dir)[0]
-        shrink_image(os.path.join(rst_trip_dir, os.path.basename(route_map_path)), sizes["large"])
+    maps = {}
+    for key in ("route_map", "satellite_map"):
+        map_path = str(trip.get(key) or "").strip()
+        if map_path:
+            if not os.path.isabs(map_path):
+                map_path = os.path.join(profile_dir, map_path)
+            maps[key] = _copy_media([map_path], rst_trip_dir)[0]
+            shrink_image(os.path.join(rst_trip_dir, os.path.basename(map_path)), sizes["large"])
 
     companion_images = []
     for companion in trip.get("companions") or []:
@@ -1021,7 +1023,8 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints, sizes):
             Description=trip.get("description", ""),
             Owner=user_data.get("name") or uid,
             TripImage=trip_image,
-            TripMap=trip_map,
+            TripMap=maps.get("route_map", ""),
+            TripSatelliteMap=maps.get("satellite_map", ""),
             Companions=";".join(companion_images),
         ),
     ]
@@ -1078,7 +1081,7 @@ def build_merged_xml(profiles_data):
         for trip in trips:
             trip_el = ET.SubElement(trips_el, "trip")
             for key, value in trip.items():
-                if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "route_map"] + TRIP_DETAIL_KEYS:
+                if key in ["companions", "footprints", "gpx", "period", "km", "is_current", "route_map", "satellite_map"] + TRIP_DETAIL_KEYS:
                     continue
                 add_text_element(trip_el, key, value, namespace=None)
 
