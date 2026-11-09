@@ -55,8 +55,9 @@ For profile id `<uid>`, the primary archive is written under `--output`:
 Pelican articles are written under `--content` (default
 `../website/content/articles/findpenguins`): `<content>/<uid>/<trip-slug>/trip.rst` and one
 `footprint_N/footprint.rst` per footprint. Media and maps are copied beside the sources. The trip
-article has `Category: findpenguins`, `Template: trip` and `Date` (first footprint), `EndDate` (last footprint plus its nights) and `Transport` metadata; trip tags are `findpenguins`, `trip` and the countries, and footprint tags include `footprint`; the
-website builds its trip index from these articles.
+article has `Category: findpenguins`, `Template: findpenguins_trip` and `Date` (first footprint), `EndDate` (last footprint plus its nights) and `Transport` metadata; trip tags are `findpenguins`, `trip` and the countries, and footprint tags include `footprint`; the
+website builds its trip index and book from these articles without generating standalone
+footprint pages.
 
 All downloaded and generated images are stored as lossless WebP; videos are untouched.
 
