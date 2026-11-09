@@ -6,13 +6,23 @@ This guide documents the current CLI, scraping pipeline and output behavior.
 
 Main script: `findpenguins_scrapper.py`.
 
-Usage: `python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force]`.
+Usage: `python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force] [--skip]`.
 It maps profile names to objects with `id`, `username`, and optional `password`; every profile is
 scraped. `--output` (default `output`) is the archive directory for XML, GPX and downloaded media,
 `--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory,
 `-t`/`--trip SLUG` scrapes only the matching trip slug (default: all trips), `--save-html` saves
 fetched source HTML for debugging, and `--force` clears the output and content folders first (only
-the selected trip's folders and GPX when `--trip` is given). An optional `settings` entry configures the rest:
+the selected trip's folders and GPX when `--trip` is given).
+
+`--skip` reads previously saved profile, trip, footprint and insights HTML instead of
+navigating, and overrides `--force`. Save snapshots with `--save-html` first;
+missing required snapshots stop the run without fetching them. Current snapshots are
+named by URL, with support for older title-based HTML files. Footprint popup results
+are saved separately as JSON; older snapshots without them produce a warning and
+empty popup fields. The existing enriched trip GPX is reused. Skip does not prevent
+network access for missing media, map imagery or elevation data.
+
+An optional `settings` entry configures the rest:
 
 | Setting | Behavior |
 |---------|----------|
@@ -28,7 +38,8 @@ the selected trip's folders and GPX when `--trip` is given). An optional `settin
 3. `parse_profile` and `parse_trips` load profile metadata and the selected trip list.
 4. For each trip, `parse_trip` loads all footprint pages and downloads route GPX and media.
    `parse_trip_insights` extracts trip description, countries, distances, transports and current
-   trip companions; `parse_trip_image` finds the trip cover image.
+   trip companions; `parse_trip_image` finds the trip cover image. Country and footprint flag
+   URLs are downloaded to `<output>/flags/`, cached by URL, and referenced relative to the output root.
 5. `build_trip_gpx` preserves the downloaded track, rebuilds coordinate-bearing waypoints, writes
    trip and footprint extensions, and enriches track-point elevations.
 6. Route maps are generated after the final GPX update when it contains a valid track.
@@ -66,6 +77,8 @@ The scraper always generates, under `--content`:
   companion metadata.
 - `<content>/<uid>/<trip-slug>/footprint_N/footprint.rst` for each footprint, with copied photos,
   videos and attachments. Each geolocated footprint also gets a `map_country.webp`.
+- `<content>/flags/` contains the shared flags used by all exported trips. The website publishes
+  them under its output root `flags/`; failed flag downloads are reported and omitted.
 
 The RST export does not generate a user/profile page or a global FindPenguins index. A consuming
 Pelican site can build its own index from trip pages using their `Category: findpenguins` and trip metadata (`Date`, `EndDate`, `Transport`).

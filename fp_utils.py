@@ -7,6 +7,7 @@ and writer modules.
 
 import os
 import re
+import hashlib
 import unicodedata
 import requests
 from urllib.parse import urljoin, urlparse
@@ -61,6 +62,14 @@ def clean_text(t):
     @return Trimmed string with compacted whitespace.
     """
     return re.sub(r"\s+", " ", (t or "")).strip()
+
+
+def strip_leading_flag(text):
+    """Remove a leading Unicode country or subdivision flag from text."""
+    return re.sub(
+        r"^\s*(?:[\U0001f1e6-\U0001f1ff]{2}|\U0001f3f4[\U000e0020-\U000e007e]+\U000e007f)\s*",
+        "", str(text or ""),
+    ).strip()
 
 
 def extract_private_references(text):
@@ -465,17 +474,62 @@ def login(username, password):
     return session
 
 
-def load_page(page, page_url, outputdir, save_html=True):
+class SnapshotError(RuntimeError):
+    """A required saved HTML snapshot cannot be used."""
+
+
+def snapshot_path(page_url, outputdir, suffix="html"):
+    """Return a stable, URL-specific snapshot path."""
+    digest = hashlib.sha256(page_url.encode("utf-8")).hexdigest()
+    return os.path.join(outputdir, f"page-{digest}.{suffix}")
+
+
+def _snapshot_slug(text):
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^A-Za-z0-9]+", "-", ascii_text).strip("-").lower()
+
+
+def load_page(page, page_url, outputdir, save_html=True, skip=False, title="", footprint_id=""):
     """! @brief Navigate to page URL, resolve dynamic content, and parse HTML.
     @param page Active Playwright page.
     @param page_url Target URL to open.
     @param outputdir Output directory used for optional HTML snapshots.
-    @param save_html When true, save prettified HTML to disk.
+    @param save_html When true, save the loaded HTML to disk.
+    @param skip When true, read a saved snapshot instead of navigating.
+    @param title Optional title for locating snapshots saved by older versions.
+    @param footprint_id Optional footprint identifier for locating older snapshots.
     @return BeautifulSoup instance for the loaded page content.
     """
 
     parts = urlparse(page_url)
     _dirname, filename = os.path.split(parts.path)
+
+    if skip:
+        path = snapshot_path(page_url, outputdir)
+        if not os.path.isfile(path):
+            legacy_names = [filename]
+            if title:
+                legacy_names.insert(0, _snapshot_slug(title))
+            candidates = [os.path.join(outputdir, name + ".html") for name in legacy_names if name]
+            if footprint_id and os.path.isdir(outputdir):
+                matches = []
+                for name in os.listdir(outputdir):
+                    if not name.endswith(".html") or name == "insights.html":
+                        continue
+                    candidate = os.path.join(outputdir, name)
+                    with open(candidate, encoding="utf-8") as handle:
+                        legacy_soup = BeautifulSoup(handle, "html.parser")
+                    if legacy_soup.select_one(f"li.footprint[data-id='{footprint_id}'] h1.headline"):
+                        matches.append(candidate)
+                if len(matches) > 1:
+                    raise SnapshotError(f"Multiple saved snapshots match footprint {footprint_id}: {matches}")
+                candidates = matches
+            path = next((candidate for candidate in candidates if os.path.isfile(candidate)), "")
+        if not path:
+            raise SnapshotError(f"No saved HTML snapshot for {page_url} in {outputdir}; run with --save-html first")
+        print(f"  - Reading saved page [{path}] ...")
+        with open(path, encoding="utf-8") as handle:
+            return BeautifulSoup(handle, "html.parser")
 
     print(f"  - Getting page [{page_url}] ...")
     page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
@@ -483,21 +537,48 @@ def load_page(page, page_url, outputdir, save_html=True):
     if "/trip/" in parts.path:
         click_load_more_until_done(page)
 
-    soup = BeautifulSoup(page.content(), "html.parser")
-
-    file_stem = filename
-    if "/trip/" in parts.path:
-        title_el = soup.select_one("h1.headline")
-        title = " ".join(title_el.get_text().split()) if title_el else ""
-        if title:
-            ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")
-            slug = re.sub(r"[^A-Za-z0-9]+", "-", ascii_title).strip("-").lower()
-            if slug:
-                file_stem = slug
+    page_html = page.content()
+    soup = BeautifulSoup(page_html, "html.parser")
 
     if save_html:
-        page_html = os.path.join(outputdir, file_stem + ".html")
-        with open(page_html, "w", encoding="utf-8") as f:
-            f.write(soup.prettify())
+        with open(snapshot_path(page_url, outputdir), "w", encoding="utf-8") as f:
+            f.write(page_html)
 
     return soup
+
+def get_emoji_flag( code ):
+    """! @brief Get emoji flag.
+    @param flag code.
+    @return emoji flag.
+    """
+
+    if len(code) == 2:
+        # Use mathematical code point shifting (127397 + ord)
+        return chr(127397 + ord(code[0].upper())) + chr(127397 + ord(code[1].upper()))
+
+    # Handle the regional subdivisions (gb-sc, gb-ni)
+    elif "-" in code:
+        parent, sub = code.split("-", 1)
+        
+        # Fallback for Northern Ireland since it has no official subdivision emoji
+        if parent == "gb" and sub == "ni":
+            return chr(127468) + chr(127463)  # Union Jack (🇬🇧)
+            
+        # Standardize Unicode regional specific variations
+        # (e.g., UK uses 'sct' for Scotland, 'wls' for Wales, 'eng' for England)
+        if parent == "gb":
+            sub_map = {"sc": "sct", "wa": "wls", "wl": "wls", "er": "eng"}
+            sub = sub_map.get(sub, sub)
+            
+        # Generate full tag string payload (e.g., "ustx" or "gbsct")
+        full_tag_string = f"{parent}{sub}"
+        
+        # Assemble the Unicode Tag Sequence 
+        flag_sequence = [chr(0x1F3F4)]  # Base Emoji Black Flag
+        for char in full_tag_string:
+            flag_sequence.append(chr(917536 + ord(char)))  # Tag Shift Offset
+        flag_sequence.append(chr(0xE007F))  # Closing Cancel Tag
+        
+        return "".join(flag_sequence)
+        
+    return "❓"

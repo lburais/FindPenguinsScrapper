@@ -17,7 +17,7 @@ from functools import lru_cache
 from math import radians, sin, cos, sqrt, atan2, isfinite
 
 from fp_config import GPX_NS, XSI_NS
-from fp_utils import gpx_tag, add_text_element, format_tree, to_webp, make_variant, shrink_image
+from fp_utils import gpx_tag, add_text_element, format_tree, to_webp, make_variant, shrink_image, strip_leading_flag
 from fp_elevation import fetch_elevations
 
 
@@ -938,7 +938,7 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints, sizes):
     """
     uid = str(user_data.get("uid", "")).strip()
     trip_slug = str(trip.get("slug", "")).strip()
-    trip_title = str(trip.get("title") or trip_slug).strip()
+    trip_title = strip_leading_flag(trip.get("title") or trip_slug)
     rst_trip_dir = os.path.join(content_dir, uid, trip_slug)
     print(f"  - Building trip reStructuredText [{rst_trip_dir}]...")
 
@@ -977,15 +977,17 @@ def build_trip_rst(content_dir, trip_dir, user_data, trip, footprints, sizes):
         name = str(companion.get("name") or companion.get("uid") or "").strip()
         companion_images.append(f"{name}|{picture}")
 
-    countries = ", ".join(
-        f"{country.get('flag', '')} {country.get('name', '')}".strip()
+    countries = ", ".join(str(country.get("name", "")).strip() for country in trip.get("countries") or [])
+    country_flags = ";".join(
+        f"{str(country.get('name', '')).strip()}|{str(country.get('flag', '')).strip()}"
         for country in trip.get("countries") or []
     )
-    country_flags = ", ".join(
-        str(country.get("flag", "")).strip()
-        for country in trip.get("countries") or []
-        if str(country.get("flag", "")).strip()
-    )
+    flags = {country.get("flag", "") for country in trip.get("countries") or []}
+    flags.update(footprint.get("flag", "") for footprint in footprints)
+    for flag in flags:
+        if flag and flag.startswith("flags/"):
+            flag_path = os.path.join(os.path.dirname(profile_dir), flag)
+            _copy_media([flag_path], os.path.join(content_dir, "flags"))
     trip_tags = ["findpenguins", "trip"]
     known_tags = {tag.casefold() for tag in trip_tags}
     insight_tags = [

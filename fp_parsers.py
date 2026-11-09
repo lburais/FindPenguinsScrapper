@@ -6,6 +6,7 @@ dictionaries used by the writer layer.
 """
 
 import datetime
+import json
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -13,7 +14,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from fp_config import BASE_URL, HEADERS
-from fp_utils import clean_text, extract_expandable_text, extract_private_references, download_image, download_video, download_file, load_page, gpx_tag
+from fp_utils import clean_text, extract_expandable_text, extract_private_references, download_image, download_video, download_file, load_page, gpx_tag, strip_leading_flag, snapshot_path, SnapshotError
 
 
 def apply_gpx_coordinates(footprints, gpx_path):
@@ -181,18 +182,9 @@ def click_footprint_menu(page):
                     flag_img = tag.select_one("img.flag-icon, img.flag-sm")
                     if flag_img:
                         src = clean_text(flag_img.get("src", ""))
-                        m_code = re.search(r"/flags-png/([a-z]{2})\.png", src, flags=re.IGNORECASE)
-                        if m_code:
-                            cc = m_code.group(1).upper()
-                            if len(cc) == 2 and cc.isalpha():
-                                flag = chr(127397 + ord(cc[0])) + chr(127397 + ord(cc[1]))
+                        flag = urljoin(BASE_URL, src) if src else ""
 
-                    country_match = re.match(r"^\s*(\S+)\s+(.+?)\s*$", label)
-                    if country_match and not re.search(r"[A-Za-z]", country_match.group(1)):
-                        flag = country_match.group(1)
-                        country = clean_text(country_match.group(2))
-                    else:
-                        country = label
+                    country = strip_leading_flag(label)
 
             if country or city or lat or lon:
                 popup_data["places"].append(
@@ -300,7 +292,7 @@ def parse_trips(soup, tripid):
         slug = path_parts[-1]
 
         title_el = link_el.select_one(".content .title h2")
-        title = clean_text(title_el.get_text()) if title_el else ""
+        title = strip_leading_flag(clean_text(title_el.get_text())) if title_el else ""
 
         stats = link_el.select(".content .stats li")
         period = clean_text(stats[0].get_text()) if stats else ""
@@ -362,7 +354,7 @@ def parse_footprints(soup):
     return footprints
 
 
-def parse_trip_insights(page, trip_url, trip_dir, save_html=True):
+def parse_trip_insights(page, trip_url, trip_dir, save_html=True, skip=False):
     """! @brief Extract all details from the Insights subpage of a trip.
     @param page Active Playwright page.
     @param trip_url URL of the trip page; insights are at `<trip_url>/insights`.
@@ -374,19 +366,27 @@ def parse_trip_insights(page, trip_url, trip_dir, save_html=True):
         dictionaries (both empty when unavailable).
     """
     insights_url = trip_url.rstrip("/") + "/insights"
-    print(f"  - Getting page [{insights_url}] ...")
-    try:
-        response = page.goto(insights_url, wait_until="domcontentloaded", timeout=30000)
-        if response is not None and not response.ok:
+    snapshot = os.path.join(trip_dir, "insights.html")
+    if skip:
+        if not os.path.isfile(snapshot):
+            raise SnapshotError(f"No saved HTML snapshot for {insights_url} at {snapshot}; run with --save-html first")
+        print(f"  - Reading saved page [{snapshot}] ...")
+        with open(snapshot, encoding="utf-8") as handle:
+            page_html = handle.read()
+    else:
+        print(f"  - Getting page [{insights_url}] ...")
+        try:
+            response = page.goto(insights_url, wait_until="domcontentloaded", timeout=30000)
+            if response is not None and not response.ok:
+                return {}, []
+            page.wait_for_timeout(1000)
+            page_html = page.content()
+        except Exception:
             return {}, []
-        page.wait_for_timeout(1000)
-        page_html = page.content()
-    except Exception:
-        return {}, []
 
-    if save_html:
-        with open(os.path.join(trip_dir, "insights.html"), "w", encoding="utf-8") as f:
-            f.write(page_html)
+        if save_html:
+            with open(snapshot, "w", encoding="utf-8") as f:
+                f.write(page_html)
 
     page_soup = BeautifulSoup(page_html, "html.parser")
     insights = {"description": "", "countries": [], "distance": "", "transports": []}
@@ -400,15 +400,12 @@ def parse_trip_insights(page, trip_url, trip_dir, save_html=True):
         return re.sub(r"[^\d]", "", match.group(0)) if match else ""
 
     for li in page_soup.select("#countryBubbles li"):
-        name = clean_text(li.get_text(" ", strip=True))
+        name = strip_leading_flag(clean_text(li.get_text(" ", strip=True)))
         if not name:
             continue
         img = li.select_one("img")
-        code = re.search(r"/flags-png/([a-z]{2})\.png", img.get("src", "") if img else "", flags=re.IGNORECASE)
-        flag = ""
-        if code:
-            cc = code.group(1).upper()
-            flag = chr(127397 + ord(cc[0])) + chr(127397 + ord(cc[1]))
+        src = clean_text(img.get("src", "")) if img else ""
+        flag = urljoin(BASE_URL, src) if src else ""
         insights["countries"].append({"name": name, "flag": flag})
 
     for label_el in page_soup.select(".statsSection .sml"):
@@ -465,7 +462,7 @@ def parse_trip_image(soup):
     return url
 
 
-def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
+def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True, skip=False):
     """! @brief Parse one trip in detail and collect enriched footprint data.
     @param page Active Playwright page.
     @param session Authenticated requests session used for GPX download.
@@ -477,7 +474,7 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
     """
 
     trip_box = soup.select_one("div.tripBox[data-trip-id]")
-    if trip_box:
+    if trip_box and not skip:
         trip_internal_id = trip_box.get("data-trip-id", "")
         if trip_internal_id:
             gpx_url = urljoin(BASE_URL, f"/account/trips/{trip_internal_id}/travel-route.gpx")
@@ -499,8 +496,25 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
         if not fp_url:
             continue
 
-        fp_soup = load_page(page, fp_url, trip_dir, save_html=save_html)
-        popup_data = click_footprint_menu(page)
+        fp_soup = load_page(page, fp_url, trip_dir, save_html=save_html, skip=skip, footprint_id=fp_id)
+        popup_path = snapshot_path(fp_url, trip_dir, "popup.json")
+        if skip:
+            if os.path.isfile(popup_path):
+                try:
+                    with open(popup_path, encoding="utf-8") as handle:
+                        popup_data = json.load(handle)
+                    if not isinstance(popup_data, dict):
+                        raise ValueError("expected a JSON object")
+                except (OSError, ValueError) as exc:
+                    raise SnapshotError(f"Unable to read popup snapshot {popup_path}: {exc}") from exc
+            else:
+                print(f"  WARNING: no saved popup data for {fp_url}; popup fields are unavailable")
+                popup_data = {}
+        else:
+            popup_data = click_footprint_menu(page)
+            if save_html:
+                with open(popup_path, "w", encoding="utf-8") as handle:
+                    json.dump(popup_data, handle, ensure_ascii=False)
         fp = fp_soup.select_one(f"li.footprint[data-id='{fp_id}']")
         if not fp:
             fp = fp_soup.select_one("ul.FootprintList li.footprint")
@@ -613,6 +627,7 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True):
                 "pdf": attachments["pdf"],
             }
         )
-    apply_gpx_coordinates(footprints, os.path.join(trip_dir, os.path.basename(trip_dir) + ".gpx"))
+    gpx_dir = os.path.dirname(trip_dir) if skip else trip_dir
+    apply_gpx_coordinates(footprints, os.path.join(gpx_dir, os.path.basename(trip_dir) + ".gpx"))
     apply_day_numbers(footprints)
     return footprints

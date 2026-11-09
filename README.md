@@ -78,7 +78,7 @@ python -m playwright install chromium
 ## ⚙️ Utilisation
 
 ```bash
-python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force]
+python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force] [--skip]
 ```
 
 - `profiles.json` : fichier de profils (obligatoire).
@@ -87,6 +87,17 @@ python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t
 - `-t`, `--trip` : ne scraper que le voyage portant ce slug (défaut : tous).
 - `--force` : vider `--output` et `--content` avant de scraper (avec `--trip`, seul ce voyage est supprimé).
 - `--save-html` : conserver les pages HTML brutes (débogage).
+- `--skip` : utiliser les pages HTML précédemment enregistrées sans les recharger ; désactive `--force` s'il est aussi fourni.
+
+Exécutez d'abord avec `--save-html`, puis relancez avec `--skip` pour réutiliser
+les pages du profil, du voyage, des étapes et des statistiques. Une page manquante
+arrête l'exécution avec une erreur, sans téléchargement de remplacement. Les
+données des menus d'étape sont également sauvegardées ; pour les anciennes
+captures sans ces données, un avertissement est affiché et les champs
+correspondants restent vides. Les anciens noms de fichiers HTML restent utilisables.
+Cette option ne rend pas le traitement entièrement hors ligne : les médias
+manquants, les cartes et les données d'altitude peuvent encore nécessiter le
+réseau. Le GPX existant est réutilisé au lieu de retélécharger le parcours.
 
 ### Fichier de profils
 ```json
@@ -118,6 +129,7 @@ Archive (`--output`) :
 
 ```text
 output/
+├── flags/                    # Drapeaux WebP partagés entre tous les profils et voyages
 └── pseudo_findpenguins/
     ├── pseudo_findpenguins.xml # Index XML complet du profil
     ├── voyage-islande.gpx      # Parcours avec waypoints enrichis
@@ -133,6 +145,7 @@ Articles Pelican (`--content`) :
 
 ```text
 content/
+├── flags/                    # Copie partagée pour le site Pelican
 └── pseudo_findpenguins/
     └── voyage-islande/
         ├── trip.rst            # Article du voyage (Category: findpenguins, Date/EndDate)
@@ -146,6 +159,13 @@ content/
 ```
 
 Le voyage porte les métadonnées `Date` (première étape), `EndDate` (dernière étape plus ses nuits), `Transport` (ex. `bus 682 km; flight 581 km`) et `Category: findpenguins`; ses tags sont `findpenguins`, `trip` et les pays. Les étapes ont le tag `footprint`. Toutes les images (photos, couvertures, avatars, cartes) sont converties en WebP sans perte; les vidéos sont conservées telles quelles.
+
+Les drapeaux proviennent des URL d'images FindPenguins, y compris les subdivisions.
+Chaque URL est téléchargée une seule fois dans `output/flags/`, puis copiée dans
+`--content/flags/`. Les champs `CountryFlags` et `Flag` référencent `flags/...`;
+le site publie ces images à la racine `flags/`. En cas d'échec, un avertissement
+est affiché et le nom du pays reste visible sans image. Rescraper les anciens
+voyages pour remplacer leurs emojis par ces fichiers.
 
 Les articles conservent l'image originale et ajoutent des variantes redimensionnées (jamais agrandies), référencées par les métadonnées :
 

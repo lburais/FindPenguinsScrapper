@@ -2,7 +2,7 @@
 """! @file findpenguins_scrapper.py
 @brief Entrypoint and orchestration for FindPenguins scraping/export.
 
-Usage: python findpenguins_scrapper.py PROFILES.json [--output DIR] [--content DIR] [--trip SLUG] [--save-html] [--force]
+Usage: python findpenguins_scrapper.py PROFILES.json [--output DIR] [--content DIR] [--trip SLUG] [--save-html] [--force] [--skip]
 
 The profiles file maps profile names to {id, username, password}. An optional
 "settings" entry configures the remaining options (see DEFAULT_SETTINGS). For every profile the
@@ -10,17 +10,19 @@ script produces one user XML index, one GPX file per trip and Pelican articles
 (reStructuredText) for each trip and footprint.
 """
 
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
 import xml.etree.ElementTree as ET
 import requests
 
 from fp_config import BASE_URL
-from fp_utils import login, create_browser_page, load_page, download_image
+from fp_utils import login, create_browser_page, load_page, download_image, SnapshotError
 from fp_parsers import parse_profile, parse_trips, parse_trip, parse_trip_insights, parse_trip_image
 from fp_writers import (
     build_trip_gpx,
@@ -42,6 +44,25 @@ DEFAULT_SETTINGS = {
 # process_profile
 # ##############################################################################################
 
+def download_trip_flags(output, trip, footprints):
+    """Download flags once per source URL and store archive-root-relative paths."""
+    for entry in [*(trip.get("countries") or []), *footprints]:
+        flag_url = str(entry.get("flag") or "").strip()
+        if not flag_url:
+            continue
+        try:
+            parsed = urlparse(flag_url)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError("flag URL must be an absolute HTTP(S) URL")
+            stem = os.path.splitext(os.path.basename(parsed.path))[0]
+            stem = re.sub(r"[^a-z0-9-]+", "-", stem.lower()).strip("-") or "flag"
+            digest = hashlib.sha256(flag_url.encode("utf-8")).hexdigest()[:16]
+            path = download_image(flag_url, os.path.join(output, "flags"), filename=f"{stem}-{digest}")
+            entry["flag"] = os.path.relpath(path, output).replace(os.sep, "/")
+        except (OSError, ValueError, requests.RequestException) as exc:
+            print(f"  WARNING: flag download failed for {flag_url}: {exc}")
+            entry["flag"] = ""
+
 
 def process_profile(
     profile_id,
@@ -60,12 +81,16 @@ def process_profile(
 
     output = settings["output"]
     save_html = settings["save_html"]
+    skip = settings.get("skip", False)
     trip_slug = settings["trip"]
     map_background = settings["map_background"]
     show_footprint_bubbles = settings["footprint_bubbles"]
 
-    session = login(username, password)
-    playwright, browser, page = create_browser_page(session)
+    if skip:
+        session = page = playwright = browser = None
+    else:
+        session = login(username, password)
+        playwright, browser, page = create_browser_page(session)
 
     output_dir = os.path.join(output, profile_id)
     os.makedirs(output_dir, exist_ok=True)
@@ -74,7 +99,7 @@ def process_profile(
         # Parse profile
         print(f"Parsing profile [{profile_id}] ...")
 
-        soup = load_page(page, urljoin(BASE_URL, profile_id), output_dir, save_html=save_html)
+        soup = load_page(page, urljoin(BASE_URL, profile_id), output_dir, save_html=save_html, skip=skip)
 
         user_data = parse_profile(soup)
         user_data["uid"] = profile_id
@@ -102,23 +127,24 @@ def process_profile(
                 trip_dir = os.path.join(output_dir, trip['slug'])
                 os.makedirs(trip_dir, exist_ok=True)
 
-                soup = load_page(page, trip["url"], trip_dir, save_html=save_html)
+                soup = load_page(page, trip["url"], trip_dir, save_html=save_html, skip=skip, title=trip["title"])
 
                 image_url = parse_trip_image(soup)
                 if image_url:
                     try:
-                        local_image = download_image(image_url, trip_dir, filename="cover_trip", refresh=True)
+                        local_image = download_image(image_url, trip_dir, filename="cover_trip", refresh=not skip)
                         trip["image"] = os.path.relpath(local_image, output_dir)
                     except Exception as e:
                         print(f"  WARNING: trip image download failed: {e}")
 
                 photos_dir = trip_dir
-                footprints = parse_trip(page, session, soup, trip_dir, photos_dir, save_html=save_html)
+                footprints = parse_trip(page, session, soup, trip_dir, photos_dir, save_html=save_html, skip=skip)
                 trip["footprints"] = footprints
                 insights, insights_companions = parse_trip_insights(
-                    page, trip["url"], trip_dir, save_html=save_html
+                    page, trip["url"], trip_dir, save_html=save_html, skip=skip
                 )
                 trip.update(insights)
+                download_trip_flags(output, trip, footprints)
                 if insights_companions:
                     for companion in insights_companions:
                         try:
@@ -129,6 +155,8 @@ def process_profile(
                                 prefix=f"{companion['uid']}_profile",
                             )
                             companion["picture"] = os.path.relpath(local_avatar, output_dir)
+                        except SnapshotError:
+                            raise
                         except Exception as e:
                             print(f"  WARNING: companion picture download failed: {e}")
                     trip["companions"] = insights_companions
@@ -137,8 +165,10 @@ def process_profile(
 
                 # Preserve route track points by seeding target GPX from downloaded trip GPX.
                 downloaded_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
-                if os.path.exists(downloaded_trip_gpx):
+                if not skip and os.path.exists(downloaded_trip_gpx):
                     shutil.copyfile(downloaded_trip_gpx, trip_gpx)
+                elif skip and not os.path.isfile(trip_gpx):
+                    print(f"  WARNING: no saved trip GPX at {trip_gpx}; route track cannot be reused")
 
                 build_trip_gpx(trip_gpx, user_data, trip, footprints)
                 for key, filename, background, bubbles in (
@@ -159,7 +189,7 @@ def process_profile(
                         print(f"  - WARNING: unable to create {filename} for {trip['title']}: {exc}")
 
                 old_trip_gpx = os.path.join(trip_dir, trip["slug"] + ".gpx")
-                if old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
+                if not skip and old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
                     os.remove(old_trip_gpx)
 
             except Exception as e:
@@ -180,8 +210,10 @@ def process_profile(
         # print( ET.tostring(xml_tree.getroot(), encoding="unicode", method="xml" ))
         return user_data, trips
     finally:
-        browser.close()
-        playwright.stop()
+        if browser:
+            browser.close()
+        if playwright:
+            playwright.stop()
 
 
 # ##############################################################################################
@@ -245,7 +277,7 @@ def clear_folders(output, content, profiles, trip=None):
             os.remove(gpx)
 
 
-def scrapper(profiles_file, output, content, trip=None, save_html=False, force=False):
+def scrapper(profiles_file, output, content, trip=None, save_html=False, force=False, skip=False):
     """! @brief Scrape every profile of the profiles file and generate the Pelican articles.
     @param profiles_file JSON profiles file path.
     @param output Archive directory for XML, GPX and downloaded media.
@@ -253,12 +285,15 @@ def scrapper(profiles_file, output, content, trip=None, save_html=False, force=F
     @param trip Optional slug of the only trip to scrape.
     @param save_html Whether to save downloaded HTML for debugging.
     @param force Whether to clear the output and content folders (only the selected trip when `trip` is set) first.
+    @param skip Use saved HTML snapshots without navigating; overrides force.
     @return List of (user_data, trips) tuples for successfully scraped profiles.
     """
     profiles, settings = load_profiles(profiles_file)
-    if force:
+    if force and skip:
+        print("  --skip disables --force to preserve saved snapshots")
+    if force and not skip:
         clear_folders(output, content, profiles, trip)
-    settings.update(output=output, trip=trip, save_html=save_html)
+    settings.update(output=output, trip=trip, save_html=save_html, skip=skip)
 
     # Process each profile, collecting results for merged XML
     collected = []
@@ -269,6 +304,8 @@ def scrapper(profiles_file, output, content, trip=None, save_html=False, force=F
 
         try:
             collected.append(process_profile(profile_id, username, password, settings))
+        except SnapshotError:
+            raise
         except Exception as e:
             print(f"\n❌ ERROR processing profile {profile_id}: {e}\n")
 
@@ -340,5 +377,9 @@ if __name__ == "__main__":
         "--force",
         action="store_true",
         help="Clear the output and content folders before scraping (only the --trip trip when given)")
+    parser.add_argument(
+        "--skip",
+        action="store_true",
+        help="Use saved HTML snapshots without navigating; disables --force")
     arguments = parser.parse_args()
-    scrapper(arguments.profiles, arguments.output, arguments.content, arguments.trip, arguments.save_html, arguments.force)
+    scrapper(arguments.profiles, arguments.output, arguments.content, arguments.trip, arguments.save_html, arguments.force, arguments.skip)

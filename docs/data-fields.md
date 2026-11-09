@@ -83,7 +83,7 @@ directly on the trip dictionary (there is no `insights` level):
 |-------|--------|-------|
 | `description` | First paragraph `.tripInsights .tripInsightsSection p` | Trip description text. |
 | `countries[].name` | `#countryBubbles li` | Country name. |
-| `countries[].flag` | `img` `src` (`/flags-png/<cc>.png`) | Emoji flag built from the country code. |
+| `countries[].flag` | `img` `src` (including subdivision flags) | Source URL, downloaded as a shared WebP and serialized as an archive-root-relative `flags/...` path. |
 | `distance` | `.statsSection .number` next to the "kilometers" label | Digits only (`2,436` → `2436`), km. |
 | `transports[].name` | `.transportStats li .transport` | Lower-cased, e.g. `camper`, `flight`, `train`. |
 | `transports[].distance` | `.transportStats li .value` | Digits only, km. |
@@ -93,7 +93,7 @@ XML/GPX output (trip metadata extensions):
 ```xml
 <description>…</description>
 <countries>
-  <country><name>France</name><flag>🇫🇷</flag></country>
+  <country><name>France</name><flag>flags/fr-0123456789abcdef.webp</flag></country>
 </countries>
 <distance>2436</distance>
 <transports>
@@ -104,7 +104,9 @@ XML/GPX output (trip metadata extensions):
 `trip.rst` keeps trip summary metadata for a consuming site's trip index. It contains no body
 sections for standalone period/duration/distance, insights, or footprint links. Country names
 are emitted as tags, and transport modes with kilometer values are combined in the generated RST
-metadata as the `Transport` field. The scraper itself does not generate a profile page or global
+metadata as the `Transport` field. `Countries` contains names, while `CountryFlags` contains
+semicolon-separated `name|flags/path.webp` pairs (an unavailable image has an empty path).
+The scraper itself does not generate a profile page or global
 FindPenguins index; a consuming site builds its own index from these trip pages.
 
 `parse_trip_insights` also returns the companions from "Travelers in this trip"
@@ -156,6 +158,8 @@ Each footprint page is loaded in Playwright and the `li.footprint[data-id=<id>]`
 The menu button `a.menu[role='button']` is clicked, the popup `#_fpMenuPopup ._fpMenu` is awaited
 (5–7 s timeouts) and its HTML is parsed. The popup is then closed (close button or Escape).
 If the button or popup is not available, an empty dictionary is returned and the fields stay empty.
+With `--save-html`, popup results are saved separately for `--skip` replay; legacy HTML
+snapshots without popup results produce a warning and leave these fields empty.
 
 | Field | Selector | Extraction |
 |-------|----------|------------|
@@ -164,7 +168,7 @@ If the button or popup is not available, an empty dictionary is returned and the
 | `temperature` | Same element | First number (`-?\d+([.,]\d+)?`), commas removed. |
 | `altitude` | `li .icon-font.altitude` → parent text | First number, commas removed. |
 | `country` | `.fpMenuPlacesList a.tag` with a link starting with `/` but not `/explore/` | Label text; a leading emoji flag is split from the name. |
-| `flag` | Same tag, `img.flag-icon` / `img.flag-sm` `src` (`/flags-png/xx.png`) | Country code converted to a flag emoji (regional indicator characters); otherwise the emoji from the label. |
+| `flag` | Same tag, `img.flag-icon` / `img.flag-sm` `src` | Source URL downloaded to the shared `flags/` directory; missing or failed downloads leave no flag. |
 | `city` | `a.tag` with `href` starting `/explore/` | Label text. |
 | popup `latitude` / `longitude` | `a.tag.coordAction` (textarea or label, DMS format) | Converted from degrees/minutes/seconds + N/S/E/W to decimal. When absent, the centre of the bounding box in the `/explore/<name>/<lat_min>,<lon_min>,<lat_max>,<lon_max>` link is used. |
 
