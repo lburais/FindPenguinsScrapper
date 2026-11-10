@@ -1,4 +1,4 @@
-# FindPenguinsScrapper Architecture
+# scrapers Architecture
 
 This document describes the current data flow and generated outputs.
 
@@ -11,7 +11,10 @@ This document describes the current data flow and generated outputs.
 
 ## Main Components
 
-- `findpenguins_scrapper.py`: CLI, orchestration and output generation.
+- `findpenguins.py` / `findpenguins_scrapper.py`: CLI and archive orchestration.
+- `fp_archive.py`: portable per-profile and per-trip JSON manifests.
+- `aventures2rst.py`: independent archive-to-Pelican conversion.
+- `reminder.py` / `reminders2rst.py`: `rem export` JSON export and per-reminder Pelican articles.
 - `fp_config.py`: site endpoints, request headers and XML namespaces.
 - `fp_utils.py`: login, Playwright setup, page loading, downloads and serialization helpers.
 - `fp_parsers.py`: profile, trip, insight and footprint extraction.
@@ -33,9 +36,9 @@ flowchart TD
   I --> J[Track elevation enrichment]
   I --> K[Optional route-map PNG]
   I --> L[Update profile XML]
-  K --> M{Requested formats}
+  K --> M[Portable JSON manifests]
   L --> M
-  M --> O[Optional Pelican trip and footprint RST]
+  M --> O[aventures2rst: Pelican trip and footprint RST]
 ```
 
 The profile and trip parsers collect data into dictionaries. The writers serialize those
@@ -47,12 +50,13 @@ not normally stop the remaining trips.
 For profile id `<uid>`, the primary archive is written under `--output`:
 
 - `<output>/<uid>/<uid>.xml`: profile and trip index.
+- `<output>/<uid>/profile.json` and `<output>/<uid>/<trip-slug>/trip.json`: manifests used by the independent converter.
 - `<output>/<uid>/<trip-slug>.gpx`: enriched route and footprint waypoints.
 - `<output>/<uid>/<trip-slug>/`: downloaded route source, trip image, footprint photos/videos,
   optional fetched HTML, and `map_trip.webp` plus `satellite_trip.webp` when a valid
   route is available and the satellite imagery request succeeds.
 
-Pelican articles are written under `--content` (default
+The converter writes Pelican articles under `--content` (default
 `../website/content/articles/findpenguins`): `<content>/<uid>/<trip-slug>/trip.rst` and one
 `footprint_N/footprint.rst` per footprint. Media and maps are copied beside the sources. The trip
 article has `Category: findpenguins`, `Template: findpenguins_trip` and `Date` (first footprint), `EndDate` (last footprint plus its nights) and `Transport` metadata; trip tags are `findpenguins`, `trip` and the countries, and footprint tags include `footprint`; the
@@ -68,6 +72,7 @@ Trips without a valid GPX track do not get a route map.
 ## Design Decisions
 
 - Keep parser logic separate from serialization.
+- Keep media paths in the JSON manifests relative to the archive root so archives can be moved.
 - Treat downloaded GPX track geometry as the route source of truth; regenerate waypoints from
   footprints and preserve the track elements.
 - Add each coordinate-bearing footprint as a waypoint, with additional FindPenguins fields in

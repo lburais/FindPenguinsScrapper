@@ -1,5 +1,6 @@
 .vscode/
 __pycache__/
+tests/
 venv/
 profiles.json
 franklin.json

@@ -354,12 +354,11 @@ def parse_footprints(soup):
     return footprints
 
 
-def parse_trip_insights(page, trip_url, trip_dir, save_html=True, skip=False):
+def parse_trip_insights(page, trip_url, trip_dir, skip=False):
     """! @brief Extract all details from the Insights subpage of a trip.
     @param page Active Playwright page.
     @param trip_url URL of the trip page; insights are at `<trip_url>/insights`.
     @param trip_dir Directory where the page HTML snapshot is saved.
-    @param save_html When true, save the page HTML for debugging.
     @return Tuple (insights, companions): a dictionary {"description", "countries", "distance", "transports"} where countries is a list of
         {"name", "flag"},
         transports is a list of {"name", "distance"}, and a list of {"uid", "name", "avatar"}
@@ -369,7 +368,7 @@ def parse_trip_insights(page, trip_url, trip_dir, save_html=True, skip=False):
     snapshot = os.path.join(trip_dir, "insights.html")
     if skip:
         if not os.path.isfile(snapshot):
-            raise SnapshotError(f"No saved HTML snapshot for {insights_url} at {snapshot}; run with --save-html first")
+            raise SnapshotError(f"No saved HTML snapshot for {insights_url} at {snapshot}; scrape the page first")
         print(f"  - Reading saved page [{snapshot}] ...")
         with open(snapshot, encoding="utf-8") as handle:
             page_html = handle.read()
@@ -384,9 +383,8 @@ def parse_trip_insights(page, trip_url, trip_dir, save_html=True, skip=False):
         except Exception:
             return {}, []
 
-        if save_html:
-            with open(snapshot, "w", encoding="utf-8") as f:
-                f.write(page_html)
+        with open(snapshot, "w", encoding="utf-8") as f:
+            f.write(page_html)
 
     page_soup = BeautifulSoup(page_html, "html.parser")
     insights = {"description": "", "countries": [], "distance": "", "transports": []}
@@ -462,14 +460,13 @@ def parse_trip_image(soup):
     return url
 
 
-def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True, skip=False):
+def parse_trip(page, session, soup, trip_dir, photos_dir, skip=False):
     """! @brief Parse one trip in detail and collect enriched footprint data.
     @param page Active Playwright page.
     @param session Authenticated requests session used for GPX download.
     @param soup BeautifulSoup object for the trip page.
     @param trip_dir Directory where trip artifacts are stored.
     @param photos_dir Directory where downloaded photos are stored.
-    @param save_html When true, save fetched footprint pages as HTML snapshots.
     @return List of normalized footprint dictionaries.
     """
 
@@ -496,7 +493,7 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True, skip=F
         if not fp_url:
             continue
 
-        fp_soup = load_page(page, fp_url, trip_dir, save_html=save_html, skip=skip, footprint_id=fp_id)
+        fp_soup = load_page(page, fp_url, trip_dir, skip=skip, footprint_id=fp_id)
         popup_path = snapshot_path(fp_url, trip_dir, "popup.json")
         if skip:
             if os.path.isfile(popup_path):
@@ -512,9 +509,8 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, save_html=True, skip=F
                 popup_data = {}
         else:
             popup_data = click_footprint_menu(page)
-            if save_html:
-                with open(popup_path, "w", encoding="utf-8") as handle:
-                    json.dump(popup_data, handle, ensure_ascii=False)
+            with open(popup_path, "w", encoding="utf-8") as handle:
+                json.dump(popup_data, handle, ensure_ascii=False)
         fp = fp_soup.select_one(f"li.footprint[data-id='{fp_id}']")
         if not fp:
             fp = fp_soup.select_one("ul.FootprintList li.footprint")

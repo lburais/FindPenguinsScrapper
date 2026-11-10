@@ -1,21 +1,21 @@
-# FindPenguinsScrapper Implementation Guide
+# scrapers Implementation Guide
 
 This guide documents the current CLI, scraping pipeline and output behavior.
 
 ## Entry Point and CLI
 
-Main script: `findpenguins_scrapper.py`.
+Main scripts: `findpenguins.py` and `aventures2rst.py`.
 
-Usage: `python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force] [--skip]`.
+Usage: `python findpenguins.py profiles.json [--output DIR] [-t SLUG] [--force] [--skip]`, followed by `python aventures2rst.py --output DIR [--content DIR] [-t SLUG]`.
 It maps profile names to objects with `id`, `username`, and optional `password`; every profile is
 scraped. `--output` (default `output`) is the archive directory for XML, GPX and downloaded media,
-`--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory,
-`-t`/`--trip SLUG` scrapes only the matching trip slug (default: all trips), `--save-html` saves
-fetched source HTML for debugging, and `--force` clears the output and content folders first (only
-the selected trip's folders and GPX when `--trip` is given).
+the converter's `--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory,
+`-t`/`--trip SLUG` scrapes only the matching trip slug (default: all trips). Fetched source HTML
+and footprint popup data are always saved, and `--force` clears the archive first (only
+the selected trip's folder and GPX when `--trip` is given). The content directory is not cleared.
 
 `--skip` reads previously saved profile, trip, footprint and insights HTML instead of
-navigating, and overrides `--force`. Save snapshots with `--save-html` first;
+navigating, and overrides `--force`. Run a scrape first to save snapshots;
 missing required snapshots stop the run without fetching them. Current snapshots are
 named by URL, with support for older title-based HTML files. Footprint popup results
 are saved separately as JSON; older snapshots without them produce a warning and
@@ -44,7 +44,9 @@ An optional `settings` entry configures the rest:
    trip and footprint extensions, and enriches track-point elevations.
 6. Route maps are generated after the final GPX update when it contains a valid track.
 7. The profile XML index is updated with the trip and companion data.
-8. Optional HTML or RST outputs are generated after scraping completes.
+8. Profile and per-trip JSON manifests preserve the parsed fields and archive-relative media paths.
+9. `aventures2rst.py` reads these manifests and generates RST independently. Older XML/GPX-only
+   archives must be scraped again or rebuilt with saved snapshots.
 
 Trip-level errors are logged and processing continues to later trips. Elevation and route-map
 failures are reported as warnings and do not invalidate an otherwise successful GPX.
@@ -71,7 +73,7 @@ and shared by all trips), shrunk in place to `small_size`. `TripImage` (`cover_t
 are shrunk in place to `large_size`. Footprint photos keep the original in `Photo`; the theme
 derives the `_thumb` variant (`large_size`) from each name for thumbnails and the carousel.
 
-The scraper always generates, under `--content`:
+The converter generates, under `--content`:
 
 - `<content>/<uid>/<trip-slug>/trip.rst` with trip index metadata, copied cover/map images and
   companion metadata.
@@ -98,6 +100,11 @@ footprint links. Country names are individual tags; transport mode distances are
 `Transport` field.
 
 ## Operational Notes
+
+- `reminder.py --list NAME --output DIR [--all] [--force]` invokes macOS `rem export`;
+  incomplete reminders are selected by default. `--force` clears the destination only after a
+  successful export. `reminders2rst.py --output DIR [--content DIR]` writes one stable-named
+  article per reminder, category `reminder`. Neither converter deletes stale articles.
 
 - Playwright requires an installed Chromium browser; install it with
   `python -m playwright install chromium` in the same Python environment as the project.

@@ -489,12 +489,11 @@ def _snapshot_slug(text):
     return re.sub(r"[^A-Za-z0-9]+", "-", ascii_text).strip("-").lower()
 
 
-def load_page(page, page_url, outputdir, save_html=True, skip=False, title="", footprint_id=""):
+def load_page(page, page_url, outputdir, skip=False, title="", footprint_id=""):
     """! @brief Navigate to page URL, resolve dynamic content, and parse HTML.
     @param page Active Playwright page.
     @param page_url Target URL to open.
-    @param outputdir Output directory used for optional HTML snapshots.
-    @param save_html When true, save the loaded HTML to disk.
+    @param outputdir Output directory used for HTML snapshots.
     @param skip When true, read a saved snapshot instead of navigating.
     @param title Optional title for locating snapshots saved by older versions.
     @param footprint_id Optional footprint identifier for locating older snapshots.
@@ -526,7 +525,7 @@ def load_page(page, page_url, outputdir, save_html=True, skip=False, title="", f
                 candidates = matches
             path = next((candidate for candidate in candidates if os.path.isfile(candidate)), "")
         if not path:
-            raise SnapshotError(f"No saved HTML snapshot for {page_url} in {outputdir}; run with --save-html first")
+            raise SnapshotError(f"No saved HTML snapshot for {page_url} in {outputdir}; scrape the page first")
         print(f"  - Reading saved page [{path}] ...")
         with open(path, encoding="utf-8") as handle:
             return BeautifulSoup(handle, "html.parser")
@@ -540,9 +539,8 @@ def load_page(page, page_url, outputdir, save_html=True, skip=False, title="", f
     page_html = page.content()
     soup = BeautifulSoup(page_html, "html.parser")
 
-    if save_html:
-        with open(snapshot_path(page_url, outputdir), "w", encoding="utf-8") as f:
-            f.write(page_html)
+    with open(snapshot_path(page_url, outputdir), "w", encoding="utf-8") as f:
+        f.write(page_html)
 
     return soup
 

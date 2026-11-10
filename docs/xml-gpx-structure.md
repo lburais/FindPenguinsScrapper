@@ -1,6 +1,6 @@
 # XML and GPX Structure Reference
 
-This document describes the generated file structures currently emitted by FindPenguinsScrapper.
+This document describes the FindPenguins XML and GPX structures emitted by scrapers.
 
 ## 1) Profile XML Structure
 

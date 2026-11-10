@@ -1,8 +1,8 @@
-# FindPenguinsScrapper 🐧✈️
+# scrapers
 
-Un outil puissant en Python permettant d'extraire, sauvegarder et archiver localement l'intégralité des données de profils **FindPenguins** (publics ou privés). 
+Des outils Python pour archiver des profils **FindPenguins** et des listes Apple Reminders, puis générer séparément des articles reStructuredText pour Pelican.
 
-Ce script orchestre l'authentification, le scraping des données dynamiques (textes, météo, coordonnées, nuits) et télécharge les médias (photos, vidéos et pièces jointes). Il génère des archives **GPX** et **XML**, un **livre de voyage HTML** et des sources **reStructuredText compatibles Pelican**.
+Le scraper FindPenguins orchestre l'authentification et télécharge les données et médias. Il génère des archives **GPX**, **XML** et JSON ; `aventures2rst.py` les convertit en sources Pelican. `reminder.py` exporte une liste Apple Reminders avec la commande **rem** ; `reminders2rst.py` génère un article par rappel.
 
 ---
 
@@ -14,10 +14,6 @@ Ce script orchestre l'authentification, le scraping des données dynamiques (tex
 - **Export de Données Géographiques :** 
   - Restitution d'un fichier **GPX 1.1** standardisé par voyage avec intégration des waypoints et métadonnées enrichies.
   - Enrichissement optionnel des altitudes des traces via des API topographiques externes (SRTM90m).
-- **Livre de voyage HTML :**
-  - Génération d'une page d'index par profil, d'un index global lorsque plusieurs profils sont exportés, d'un index par voyage et d'une page par étape.
-  - Cartes interactives Leaflet avec fonds OpenStreetMap. Les bibliothèques et tuiles cartographiques nécessitent une connexion réseau.
-  - Photos téléchargées localement dans les pages d'étapes.
 - **Export Pelican (reStructuredText) :**
   - Génération d'un fichier `trip.rst` par voyage et d'un `footprint.rst` par étape. Il n'y a pas de page RST de profil.
   - Chaque voyage peut inclure une carte de route PNG. Le fond est transparent par défaut; les fonds `satellite` et `street` sont sélectionnables. Les bulles numérotées des étapes sont optionnelles.
@@ -31,7 +27,12 @@ Ce script orchestre l'authentification, le scraping des données dynamiques (tex
 Le projet est structuré de manière hautement modulaire :
 
 ```text
-├── findpenguins_scrapper.py # Point d'entrée (fichier de profils) et orchestrateur
+├── findpenguins.py          # Extraction FindPenguins
+├── aventures2rst.py         # Conversion des archives FindPenguins en articles Pelican
+├── reminder.py              # Export Apple Reminders via rem
+├── reminders2rst.py         # Conversion des rappels en articles Pelican
+├── findpenguins_scrapper.py # Orchestrateur FindPenguins
+├── fp_archive.py            # Manifestes JSON portables
 ├── fp_config.py             # Configuration centrale (endpoints, headers, namespaces)
 ├── fp_utils.py              # Utilitaires (navigation Playwright, gestion des cookies, téléchargements)
 ├── fp_parsers.py            # Extraction des données et parsing DOM (BeautifulSoup)
@@ -48,12 +49,11 @@ La documentation technique complémentaire se trouve dans [`docs/`](docs/).
 
 ### 1. Cloner le dépôt
 ```bash
-git clone https://github.com/lburais/FindPenguinsParser.git
-cd FindPenguinsParser
+git clone https://github.com/lburais/scrapers.git
+cd scrapers
 ```
 
 ```bash
-rm -rf venv
 python3 -m venv venv
 source venv/bin/activate
 
@@ -73,23 +73,28 @@ Le projet utilise un navigateur Chromium automatisé pour charger le contenu dyn
 python -m playwright install chromium
 ```
 
+Pour les rappels, installer [rem](https://github.com/BRO3886/rem) et autoriser
+l'accès à Reminders dans les réglages macOS. Les commandes de conversion n'ont
+pas besoin d'accéder aux comptes sources.
+
 ---
 
 ## ⚙️ Utilisation
 
 ```bash
-python findpenguins_scrapper.py profiles.json [--output DIR] [--content DIR] [-t SLUG] [--save-html] [--force] [--skip]
+python findpenguins.py profiles.json [--output DIR] [-t SLUG] [--force] [--skip]
+python aventures2rst.py --output DIR [--content DIR] [-t SLUG]
 ```
 
 - `profiles.json` : fichier de profils (obligatoire).
-- `-o`, `--output` : archive XML, GPX et médias (défaut `output`).
-- `--content` : articles Pelican (reStructuredText) générés (défaut `../website/content/articles/findpenguins`).
+- `--output` : archive JSON, XML, GPX et médias (défaut `output` pour les deux programmes).
+- `--content` : destination des articles Pelican du convertisseur (défaut `../website/content/articles/findpenguins`).
 - `-t`, `--trip` : ne scraper que le voyage portant ce slug (défaut : tous).
-- `--force` : vider `--output` et `--content` avant de scraper (avec `--trip`, seul ce voyage est supprimé).
-- `--save-html` : conserver les pages HTML brutes (débogage).
+- `--force` : vider `--output` avant de scraper (avec `--trip`, seul ce voyage est supprimé). Les articles Pelican ne sont pas supprimés.
+- Les pages HTML et les données des menus d'étape sont toujours conservées pour permettre leur réutilisation avec `--skip`.
 - `--skip` : utiliser les pages HTML précédemment enregistrées sans les recharger ; désactive `--force` s'il est aussi fourni.
 
-Exécutez d'abord avec `--save-html`, puis relancez avec `--skip` pour réutiliser
+Exécutez une première collecte, puis relancez avec `--skip` pour réutiliser
 les pages du profil, du voyage, des étapes et des statistiques. Une page manquante
 arrête l'exécution avec une erreur, sans téléchargement de remplacement. Les
 données des menus d'étape sont également sauvegardées ; pour les anciennes
@@ -98,6 +103,28 @@ correspondants restent vides. Les anciens noms de fichiers HTML restent utilisab
 Cette option ne rend pas le traitement entièrement hors ligne : les médias
 manquants, les cartes et les données d'altitude peuvent encore nécessiter le
 réseau. Le GPX existant est réutilisé au lieu de retélécharger le parcours.
+
+Les nouveaux manifestes `profile.json` et `trip.json` conservent les champs nécessaires
+à la conversion, avec des chemins de médias relatifs à l'archive. Les anciennes archives
+XML/GPX ne contiennent pas toutes ces données : rescraper (ou utiliser `--skip` avec
+des captures existantes) pour créer les manifestes. Le convertisseur ne nettoie pas
+les anciens articles ; retirer séparément les articles périmés si nécessaire.
+
+### Apple Reminders
+
+```bash
+python reminder.py --list "Ma liste" --output reminders-output [--all] [--force]
+python reminders2rst.py --output reminders-output [--content ../website/content/articles/reminders]
+```
+
+Sans `--all`, seuls les rappels incomplets sont exportés. `--all` inclut les rappels
+terminés. L'export est enregistré dans `reminders.json` ; sans `--force`, les autres
+fichiers du dossier sont conservés, mais ce fichier est remplacé. Avec `--force`,
+le dossier de sortie est supprimé après un export réussi. Chaque rappel donne un
+article à nom stable avec `Category: reminder` ; les notes sont rendues en texte
+littéral. La conversion ne supprime pas les articles devenus périmés.
+L'export utilise `rem export` ; macOS peut demander l'autorisation d'accès aux
+rappels via la fenêtre de confidentialité système.
 
 ### Fichier de profils
 ```json
@@ -132,8 +159,10 @@ output/
 ├── flags/                    # Drapeaux WebP partagés entre tous les profils et voyages
 └── pseudo_findpenguins/
     ├── pseudo_findpenguins.xml # Index XML complet du profil
+    ├── profile.json           # Données de profil et tailles d'image
     ├── voyage-islande.gpx      # Parcours avec waypoints enrichis
     └── voyage-islande/         # Médias du voyage (images en WebP sans perte)
+        ├── trip.json           # Voyage et étapes pour aventures2rst
         ├── map_trip.webp
         ├── satellite_trip.webp  # Carte satellite avec étapes numérotées
         ├── cover_trip.webp

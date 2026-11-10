@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""! @file findpenguins_scrapper.py
-@brief Entrypoint and orchestration for FindPenguins scraping/export.
-
-Usage: python findpenguins_scrapper.py PROFILES.json [--output DIR] [--content DIR] [--trip SLUG] [--save-html] [--force] [--skip]
-
-The profiles file maps profile names to {id, username, password}. An optional
-"settings" entry configures the remaining options (see DEFAULT_SETTINGS). For every profile the
-script produces one user XML index, one GPX file per trip and Pelican articles
-(reStructuredText) for each trip and footprint.
-"""
-
 from urllib.parse import urljoin, urlparse
 
 import argparse
@@ -29,8 +17,9 @@ from fp_writers import (
     save_trip_route_map,
     build_user_xml,
     build_merged_xml,
-    build_trip_rst,
 )
+from fp_archive import write_profile, write_trip
+from output_safety import validate_clear_directory, validate_component
 
 ## Default run settings; override them with a "settings" entry in the profiles file.
 DEFAULT_SETTINGS = {
@@ -80,7 +69,6 @@ def process_profile(
     """
 
     output = settings["output"]
-    save_html = settings["save_html"]
     skip = settings.get("skip", False)
     trip_slug = settings["trip"]
     map_background = settings["map_background"]
@@ -99,7 +87,7 @@ def process_profile(
         # Parse profile
         print(f"Parsing profile [{profile_id}] ...")
 
-        soup = load_page(page, urljoin(BASE_URL, profile_id), output_dir, save_html=save_html, skip=skip)
+        soup = load_page(page, urljoin(BASE_URL, profile_id), output_dir, skip=skip)
 
         user_data = parse_profile(soup)
         user_data["uid"] = profile_id
@@ -109,10 +97,13 @@ def process_profile(
             try:
                 local_picture = download_image(profile_picture_url, output_dir, prefix=f"{profile_id}_profile")
                 user_data["picture"] = os.path.relpath(local_picture, output_dir)
+            except SnapshotError:
+                raise
             except Exception as e:
                 print(f"  WARNING: profile picture download failed: {e}")
 
         trips = parse_trips(soup, profile_id)
+        write_profile(output_dir, user_data, settings)
 
         if trip_slug:
             trips = [trip for trip in trips if trip["slug"] == trip_slug]
@@ -127,7 +118,7 @@ def process_profile(
                 trip_dir = os.path.join(output_dir, trip['slug'])
                 os.makedirs(trip_dir, exist_ok=True)
 
-                soup = load_page(page, trip["url"], trip_dir, save_html=save_html, skip=skip, title=trip["title"])
+                soup = load_page(page, trip["url"], trip_dir, skip=skip, title=trip["title"])
 
                 image_url = parse_trip_image(soup)
                 if image_url:
@@ -138,10 +129,10 @@ def process_profile(
                         print(f"  WARNING: trip image download failed: {e}")
 
                 photos_dir = trip_dir
-                footprints = parse_trip(page, session, soup, trip_dir, photos_dir, save_html=save_html, skip=skip)
+                footprints = parse_trip(page, session, soup, trip_dir, photos_dir, skip=skip)
                 trip["footprints"] = footprints
                 insights, insights_companions = parse_trip_insights(
-                    page, trip["url"], trip_dir, save_html=save_html, skip=skip
+                    page, trip["url"], trip_dir, skip=skip
                 )
                 trip.update(insights)
                 download_trip_flags(output, trip, footprints)
@@ -192,6 +183,9 @@ def process_profile(
                 if not skip and old_trip_gpx != trip_gpx and os.path.exists(old_trip_gpx):
                     os.remove(old_trip_gpx)
 
+                write_trip(output, trip_dir, trip)
+            except SnapshotError:
+                raise
             except Exception as e:
                 print(f"  ERROR: {e}")
                 trip["footprints"] = []
@@ -242,32 +236,22 @@ def load_profiles(profiles_file):
     return profiles, settings
 
 
-def clear_folders(output, content, profiles, trip=None):
-    """! @brief Delete previously generated output so the scrape starts from scratch.
-    Without `trip` the whole output and content folders are removed; with `trip` only the
-    folders and GPX file of that trip are removed for each profile.
-    @param output Archive directory.
-    @param content Pelican articles directory.
-    @param profiles List of (id, username, password) tuples.
-    @param trip Optional slug of the only trip being scraped.
-    @exception ValueError Raised when a folder to clear is a filesystem root or the home directory.
-    """
-    for folder in (output, content):
-        resolved = os.path.realpath(folder)
-        if resolved in (os.path.sep, os.path.realpath(os.path.expanduser("~"))):
-            raise ValueError(f"Refusing to clear {folder}")
+def clear_folders(output, profiles, trip=None):
+    """Clear the archive, or the selected trip for each profile."""
+    validate_clear_directory(output)
 
     if not trip:
-        for folder in (output, content):
+        for folder in (output,):
             if os.path.isdir(folder):
                 print(f"Clearing {folder}")
                 shutil.rmtree(folder)
         return
 
+    validate_component(trip)
     for profile_id, _, _ in profiles:
+        validate_component(profile_id)
         for path in (
             os.path.join(output, profile_id, trip),
-            os.path.join(content, profile_id, trip),
         ):
             if os.path.isdir(path):
                 print(f"Clearing {path}")
@@ -277,23 +261,14 @@ def clear_folders(output, content, profiles, trip=None):
             os.remove(gpx)
 
 
-def scrapper(profiles_file, output, content, trip=None, save_html=False, force=False, skip=False):
-    """! @brief Scrape every profile of the profiles file and generate the Pelican articles.
-    @param profiles_file JSON profiles file path.
-    @param output Archive directory for XML, GPX and downloaded media.
-    @param content Pelican articles directory.
-    @param trip Optional slug of the only trip to scrape.
-    @param save_html Whether to save downloaded HTML for debugging.
-    @param force Whether to clear the output and content folders (only the selected trip when `trip` is set) first.
-    @param skip Use saved HTML snapshots without navigating; overrides force.
-    @return List of (user_data, trips) tuples for successfully scraped profiles.
-    """
+def scrapper(profiles_file, output, trip=None, force=False, skip=False):
+    """Scrape profiles into the archive without generating Pelican articles."""
     profiles, settings = load_profiles(profiles_file)
     if force and skip:
         print("  --skip disables --force to preserve saved snapshots")
     if force and not skip:
-        clear_folders(output, content, profiles, trip)
-    settings.update(output=output, trip=trip, save_html=save_html, skip=skip)
+        clear_folders(output, profiles, trip)
+    settings.update(output=output, trip=trip, skip=skip)
 
     # Process each profile, collecting results for merged XML
     collected = []
@@ -320,27 +295,7 @@ def scrapper(profiles_file, output, content, trip=None, save_html=False, force=F
         merged_tree.write(merged_xml, encoding="utf-8", xml_declaration=True)
         print(f"✅ Merged XML: {merged_xml}")
 
-    sizes = {name: settings[f"{name}_size"] for name in ("small", "large")}
-    generate_rst_outputs(content, output, collected, sizes)
     return collected
-
-
-def generate_rst_outputs(content_dir, output, profiles_data, sizes):
-    """! @brief Generate Pelican articles (reStructuredText) after scraping.
-    @param content_dir Pelican articles source directory.
-    @param output Root directory containing scraped profile assets.
-    @param profiles_data List of (user_data, trips) tuples returned by process_profile.
-    @param sizes Maximum pixel size of the "small" and "large" images.
-    @return None
-    """
-    if not profiles_data:
-        return
-    print("\nGenerating reStructuredText output(s)...")
-    for user_data, trips in profiles_data:
-        profile_dir = os.path.join(output, user_data["uid"])
-        for trip in trips:
-            trip_dir = os.path.join(profile_dir, trip["slug"])
-            build_trip_rst(content_dir, trip_dir, user_data, trip, trip.get("footprints", []), sizes)
 
 
 # ##############################################################################################
@@ -348,7 +303,7 @@ def generate_rst_outputs(content_dir, output, profiles_data, sizes):
 # ##############################################################################################
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         prog="FindPenguins scrapper",
         description="Scrape the FindPenguins profiles of a profiles file",
@@ -361,25 +316,20 @@ if __name__ == "__main__":
         default="output", 
         help="Archive folder for XML, GPX and media (default: output)")
     parser.add_argument(
-        "--content",
-        default="../website/content/articles/findpenguins",
-        help="Pelican articles folder (default: ../website/content/articles/findpenguins)",
-    )
-    parser.add_argument(
         "-t", "--trip",
         default=None,
         help="Trip slug to scrape only (default: all trips)")
     parser.add_argument(
-        "--save-html", 
-        action="store_true", 
-        help="Save fetched HTML files")
-    parser.add_argument(
         "--force",
         action="store_true",
-        help="Clear the output and content folders before scraping (only the --trip trip when given)")
+        help="Clear the output folder before scraping (only the --trip trip when given)")
     parser.add_argument(
         "--skip",
         action="store_true",
         help="Use saved HTML snapshots without navigating; disables --force")
     arguments = parser.parse_args()
-    scrapper(arguments.profiles, arguments.output, arguments.content, arguments.trip, arguments.save_html, arguments.force, arguments.skip)
+    scrapper(arguments.profiles, arguments.output, arguments.trip, arguments.force, arguments.skip)
+
+
+if __name__ == "__main__":
+    main()

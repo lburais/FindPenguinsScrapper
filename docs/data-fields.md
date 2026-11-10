@@ -158,7 +158,7 @@ Each footprint page is loaded in Playwright and the `li.footprint[data-id=<id>]`
 The menu button `a.menu[role='button']` is clicked, the popup `#_fpMenuPopup ._fpMenu` is awaited
 (5–7 s timeouts) and its HTML is parsed. The popup is then closed (close button or Escape).
 If the button or popup is not available, an empty dictionary is returned and the fields stay empty.
-With `--save-html`, popup results are saved separately for `--skip` replay; legacy HTML
+Popup results are saved separately for `--skip` replay; legacy HTML
 snapshots without popup results produce a warning and leave these fields empty.
 
 | Field | Selector | Extraction |
