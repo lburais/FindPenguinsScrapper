@@ -1,6 +1,7 @@
 """Smoke tests for built distributions and installed console commands."""
 
 import hashlib
+import configparser
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,7 @@ import zipfile
 MODULES = {
     "aventures2rst.py", "findpenguins.py", "fp_archive.py", "fp_config.py",
     "fp_elevation.py", "fp_parsers.py", "fp_utils.py", "fp_writers.py",
-    "output_safety.py", "reminder.py", "reminders2rst.py",
+    "output_safety.py", "reminder.py", "reminders2rst.py", "scrapers.py",
 }
 COMMANDS = ("findpenguins", "aventures2rst", "reminder", "reminders2rst")
 
@@ -59,6 +60,10 @@ class DistributionTests(unittest.TestCase):
     def test_artifacts_contain_modules_without_private_files(self):
         with zipfile.ZipFile(self.wheel) as archive:
             wheel_files = set(archive.namelist())
+            entry_points = next(name for name in wheel_files if name.endswith(".dist-info/entry_points.txt"))
+            metadata = configparser.ConfigParser()
+            metadata.read_string(archive.read(entry_points).decode("utf-8"))
+            self.assertEqual(dict(metadata["console_scripts"]), {"scrapers": "scrapers:main"})
         with tarfile.open(self.sdist, "r:gz") as archive:
             source_files = {name.split("/", 1)[-1] for name in archive.getnames()}
         for files in (wheel_files, source_files):
@@ -67,21 +72,73 @@ class DistributionTests(unittest.TestCase):
             self.assertNotIn("franklin.json", files)
 
     def test_all_commands_show_help_outside_checkout(self):
+        result = self.run_command("scrapers", "--help")
+        no_command = self.run_command("scrapers")
+        self.assertEqual(no_command.stdout, result.stdout)
+        self.assertEqual(no_command.stderr, "")
+        for command in COMMANDS:
+            self.assertIn(command, result.stdout)
         for command in COMMANDS:
             with self.subTest(command=command):
-                result = self.run_command(command, "--help")
+                result = self.run_command("scrapers", command, "--help")
                 self.assertIn("usage:", result.stdout.lower())
+                self.assertIn("scrapers " + command, result.stdout)
+
+    def test_module_invocation_and_invalid_commands(self):
+        python = self.bin_dir / ("python.exe" if os.name == "nt" else "python")
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [str(python), "-m", "scrapers", "reminders2rst", "--help"],
+            cwd=self.root, env=env, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--output", result.stdout)
+        for args in (("invalid",), ("--unknown",), ("reminder", "--unknown")):
+            with self.subTest(args=args):
+                result = self.run_command("scrapers", *args, check=False)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("error:", result.stderr)
+
+    def test_subcommand_argument_forwarding(self):
+        python = self.bin_dir / ("python.exe" if os.name == "nt" else "python")
+        code = """
+import sys
+from unittest.mock import patch
+import scrapers
+
+cases = [
+    (["findpenguins", "profiles.json", "--output", "archive", "-t", "trip", "--force", "--skip"],
+     "findpenguins.scrapper", ("profiles.json", "archive", "trip", True, True)),
+    (["findpenguins", "profiles.json"],
+     "findpenguins.scrapper", ("profiles.json", "output", None, False, False)),
+    (["aventures2rst", "--output", "archive", "--content", "articles", "-t", "trip"],
+     "aventures2rst.convert", ("archive", "articles", "trip")),
+    (["reminder", "--list", "Trips", "--output", "archive", "--all", "--force"],
+     "reminder.export_reminders", ("archive", "Trips", True, True)),
+    (["reminders2rst", "--output", "archive", "--content", "articles"],
+     "reminders2rst.convert", ("archive", "articles")),
+]
+for arguments, target, expected in cases:
+    with patch.object(sys, "argv", ["scrapers", *arguments]), patch(target) as called:
+        scrapers.main()
+        called.assert_called_once_with(*expected)
+"""
+        result = subprocess.run(
+            [str(python), "-I", "-c", code], cwd=self.root, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_reminder_commands(self):
         output = self.root / "reminders"
-        result = self.run_command("reminder", "--list", "Trips", "--output", output)
+        result = self.run_command("scrapers", "reminder", "--list", "Trips", "--output", output)
         self.assertIn("rem export", result.stdout)
         (output / "reminders.json").write_text(
             json.dumps([{"id": "test-id", "name": "Pack", "body": "Bring a map"}]),
             encoding="utf-8",
         )
         content = self.root / "reminder-articles"
-        self.run_command("reminders2rst", "--output", output, "--content", content)
+        self.run_command("scrapers", "reminders2rst", "--output", output, "--content", content)
         slug = "reminder-" + hashlib.sha256(b"test-id").hexdigest()
         article = (content / (slug + ".rst")).read_text(encoding="utf-8")
         self.assertIn(":Title: Pack", article)
@@ -89,13 +146,13 @@ class DistributionTests(unittest.TestCase):
 
     def test_force_still_protects_working_directory(self):
         result = self.run_command(
-            "reminder", "--list", "Trips", "--output", self.root, "--force", check=False,
+            "scrapers", "reminder", "--list", "Trips", "--output", self.root, "--force", check=False,
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Refusing to clear", result.stderr)
 
     def test_findpenguins_reports_missing_profiles(self):
-        result = self.run_command("findpenguins", "missing.json", "--skip", check=False)
+        result = self.run_command("scrapers", "findpenguins", "missing.json", "--skip", check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing.json", result.stderr)
 
@@ -111,11 +168,11 @@ class DistributionTests(unittest.TestCase):
             "version": 1, "trip": {"slug": "journey", "title": "Journey", "footprints": []},
         }), encoding="utf-8")
         content = self.root / "trip-articles"
-        self.run_command("aventures2rst", "--output", archive, "--content", content)
+        self.run_command("scrapers", "aventures2rst", "--output", archive, "--content", content)
         article = (content / "traveller" / "journey" / "trip.rst").read_text(encoding="utf-8")
         self.assertIn(":Title: Journey", article)
         result = self.run_command(
-            "aventures2rst", "--output", archive, "--content", content, "--trip", "missing",
+            "scrapers", "aventures2rst", "--output", archive, "--content", content, "--trip", "missing",
             check=False,
         )
         self.assertNotEqual(result.returncode, 0)

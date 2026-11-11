@@ -4,9 +4,9 @@ This guide documents the current CLI, scraping pipeline and output behavior.
 
 ## Entry Point and CLI
 
-Main scripts: `findpenguins.py` and `aventures2rst.py`.
+The single CLI entry point is `scrapers.py`, dispatching to the four program modules.
 
-After installation, use `findpenguins profiles.json [--output DIR] [-t SLUG] [--force] [--skip]`, followed by `aventures2rst --output DIR [--content DIR] [-t SLUG]`. The original `python findpenguins.py` and `python aventures2rst.py` invocations remain available from the checkout.
+After installation, use `scrapers findpenguins profiles.json [--output DIR] [-t SLUG] [--force] [--skip]`, followed by `scrapers aventures2rst --output DIR [--content DIR] [-t SLUG]`. The equivalent Python invocation is `python -m scrapers <command> ...`.
 It maps profile names to objects with `id`, `username`, and optional `password`; every profile is
 scraped. `--output` (default `output`) is the archive directory for XML, GPX and downloaded media,
 the converter's `--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory,
@@ -101,11 +101,11 @@ footprint links. Country names are individual tags; transport mode distances are
 
 ## Operational Notes
 
-- `reminder.py --list NAME --output DIR [--all] [--force]` currently prepares the output directory
+- `scrapers reminder --list NAME --output DIR [--all] [--force]` currently prepares the output directory
   (`--force` clears it after `output_safety.validate_clear_directory`) and prints the
   `rem export --list NAME --format json --incomplete > DIR/reminders.json` command to run in a
   terminal; the direct `rem` invocation is commented out in `export_reminders`, so `--all` has no
-  effect for now. `reminders2rst.py --output DIR [--content DIR]` writes one stable-named
+  effect for now. `scrapers reminders2rst --output DIR [--content DIR]` writes one stable-named
   article per reminder, category `reminder`. Neither converter deletes stale articles.
 
 - Playwright requires an installed Chromium browser; install it with

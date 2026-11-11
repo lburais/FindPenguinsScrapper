@@ -27,11 +27,13 @@ Le scraper FindPenguins orchestre l'authentification et télécharge les donnée
 Le projet est structuré de manière hautement modulaire :
 
 ```text
-├── findpenguins.py          # CLI et orchestrateur FindPenguins
+├── scrapers.py              # Point d'entrée CLI et sélection du programme
+├── findpenguins.py          # Orchestrateur FindPenguins
 ├── aventures2rst.py         # Conversion des archives FindPenguins en articles Pelican
 ├── reminder.py              # Export Apple Reminders via rem
 ├── reminders2rst.py         # Conversion des rappels en articles Pelican
 ├── output_safety.py         # Garde-fous pour --force et les composants de chemin
+├── build_scrapers.sh        # Construction de l'exécutable PyApp
 ├── docs/                    # Documentation technique (dont api-reference.md)
 ├── fp_archive.py            # Manifestes JSON portables
 ├── fp_config.py             # Configuration centrale (endpoints, headers, namespaces)
@@ -60,12 +62,13 @@ python -m pip install -e .
 ```
 
 Les dépendances sont déclarées dans `pyproject.toml` ; `pip install -r requirements.txt`
-installe également le projet en mode éditable. L'installation fournit quatre commandes :
-`findpenguins`, `aventures2rst`, `reminder` et `reminders2rst`. Les scripts Python
-existants restent également exécutables depuis le dépôt.
+installe également le projet en mode éditable. L'installation fournit la seule commande
+`scrapers`, avec les sous-commandes `findpenguins`, `aventures2rst`, `reminder`
+et `reminders2rst`. On peut aussi utiliser `python -m scrapers` ou, depuis le
+dépôt, `python scrapers.py`. Sans sous-commande, l'aide est affichée.
 
-Après publication sur PyPI, l'installation pourra aussi se faire avec
-`python -m pip install lburais-scrapers`.
+Après publication sur PyPI sous un nom disponible, l'installation pourra aussi
+se faire avec `python -m pip install <nom-de-distribution>`.
 
 ### Initialiser Playwright
 Le projet utilise un navigateur Chromium automatisé pour charger le contenu dynamique et interagir avec les menus de FindPenguins :
@@ -87,15 +90,15 @@ python -m build
 python -m twine check dist/*
 ```
 
-Le nom de distribution est `lburais-scrapers` ; vérifier sa disponibilité et les
-droits de publication avant un premier envoi sur PyPI. Aucun identifiant, fichier
+Le nom de distribution est `scrapers`, déjà utilisé par un autre projet sur PyPI :
+choisir un nom disponible et modifier `project.name` avant publication. Aucun identifiant, fichier
 de profils ni archive de données n'est inclus dans les distributions.
 
 Pour tester le wheel construit depuis le dépôt :
 
 ```bash
-SCRAPERS_TEST_WHEEL="$(pwd)/dist/lburais_scrapers-0.1.0-py3-none-any.whl" \
-SCRAPERS_TEST_SDIST="$(pwd)/dist/lburais_scrapers-0.1.0.tar.gz" \
+SCRAPERS_TEST_WHEEL="$(pwd)/dist/scrapers-0.1.0-py3-none-any.whl" \
+SCRAPERS_TEST_SDIST="$(pwd)/dist/scrapers-0.1.0.tar.gz" \
 python -m unittest discover -s tests -v
 ```
 
@@ -103,34 +106,26 @@ Adapter les noms des fichiers à la version construite. Les tests installent le 
 et ses dépendances dans un environnement temporaire et lancent les commandes hors
 du dépôt ; cette installation nécessite un accès aux paquets.
 
-### Exécutables PyApp
+### Exécutable PyApp
 
-[PyApp](https://ofek.dev/pyapp/latest/) produit un exécutable par programme. Avec
+[PyApp](https://ofek.dev/pyapp/latest/) produit un exécutable unique. Avec
 Rust/Cargo installé, construire le wheel comme ci-dessus, puis télécharger et
 décompresser les sources PyApp selon son [guide](https://ofek.dev/pyapp/latest/how-to/).
-Depuis le dossier des sources PyApp, en remplaçant le chemin du wheel :
+Depuis le dossier des sources PyApp, exécuter le script du dépôt en remplaçant le
+chemin du script et, si nécessaire, celui du wheel :
 
 ```bash
-WHEEL="/chemin/absolu/lburais_scrapers-0.1.0-py3-none-any.whl"
-mkdir -p executables
-for command in findpenguins aventures2rst reminder reminders2rst; do
-  PYAPP_PROJECT_PATH="$WHEEL" \
-  PYAPP_EXEC_SPEC="$command:main" \
-  PYAPP_PYTHON_VERSION=3.12 \
-  PYAPP_EXPOSE_PYTHON=1 \
-  CARGO_TARGET_DIR="target-$command" \
-    cargo build --release || exit 1
-  cp "target-$command/release/pyapp" "executables/$command"
-done
+/chemin/vers/scrapers/build_scrapers.sh /chemin/absolu/scrapers-0.1.0-py3-none-any.whl
+./executables/scrapers --help
 ```
 
-Cet exemple concerne macOS/Linux ; Windows produit `pyapp.exe`. Le wheel est
-intégré à chaque exécutable, mais PyApp télécharge Python et installe les
+Cet exemple et le script concernent macOS/Linux ; Windows produit `pyapp.exe`.
+Le wheel est intégré à l'exécutable, mais PyApp télécharge Python et installe les
 dépendances au premier lancement : une connexion réseau est donc nécessaire.
 Pour préparer Chromium dans l'environnement PyApp avant une collecte :
 
 ```bash
-./executables/findpenguins self python -m playwright install chromium
+./executables/scrapers self python -m playwright install chromium
 ```
 
 `rem` et l'autorisation macOS restent nécessaires pour les rappels. Les chemins
@@ -142,8 +137,8 @@ l'emplacement de l'exécutable.
 ## ⚙️ Utilisation
 
 ```bash
-findpenguins profiles.json [--output DIR] [-t SLUG] [--force] [--skip]
-aventures2rst --output DIR [--content DIR] [-t SLUG]
+scrapers findpenguins profiles.json [--output DIR] [-t SLUG] [--force] [--skip]
+scrapers aventures2rst --output DIR [--content DIR] [-t SLUG]
 ```
 
 - `profiles.json` : fichier de profils (obligatoire).
@@ -173,8 +168,8 @@ les anciens articles ; retirer séparément les articles périmés si nécessair
 ### Apple Reminders
 
 ```bash
-reminder --list "Ma liste" --output reminders-output [--all] [--force]
-reminders2rst --output reminders-output [--content ../website/content/articles/reminders]
+scrapers reminder --list "Ma liste" --output reminders-output [--all] [--force]
+scrapers reminders2rst --output reminders-output [--content ../website/content/articles/reminders]
 ```
 
 **État actuel :** `reminder.py` prépare le dossier de sortie (avec `--force`, il est

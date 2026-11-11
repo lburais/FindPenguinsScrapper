@@ -4,7 +4,13 @@ Every function and class of the project, grouped by module. Functions prefixed w
 module-private helpers. Full parameter and return documentation is in the Doxygen-style
 docstrings of each function (`! @brief`, `@param`, `@return`).
 
-## `findpenguins.py` — scraper CLI
+## `scrapers.py` — CLI
+
+| Function | Purpose |
+|---|---|
+| `main()` | Parse the command and its arguments, then dispatch to the selected program. |
+
+## `findpenguins.py` — scraper
 
 | Function | Purpose |
 |---|---|
@@ -13,24 +19,20 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `load_profiles(profiles_file)` | Read the profiles JSON file and split profiles from the optional `settings` entry. |
 | `clear_folders(output, profiles, trip=None)` | Clear the archive, or only the selected trip of each profile (`--force`); validates paths via `output_safety`. |
 | `scrapper(profiles_file, output, trip=None, force=False, skip=False)` | Scrape all profiles into the archive without generating Pelican articles. |
-| `main()` | Parse CLI arguments and call `scrapper`. |
 
 ## `aventures2rst.py` — archive to Pelican
 
 | Function | Purpose |
 |---|---|
 | `convert(output, content, trip_slug=None)` | Rebuild trip and footprint RST articles from `profile.json` / `trip.json` manifests. |
-| `main()` | Parse CLI arguments and call `convert`. |
 
 ## `reminder.py` / `reminders2rst.py` — Apple Reminders
 
 | Function | Purpose |
 |---|---|
 | `reminder.export_reminders(output, list_name, all_reminders=False, force=False)` | Prepare the output directory and print the `rem export` command (direct invocation currently disabled). |
-| `reminder.main()` | Parse CLI arguments and call `export_reminders`. |
 | `reminders2rst._metadata(value)` | Collapse whitespace so a value fits on one RST metadata line. |
 | `reminders2rst.convert(output, content)` | Write one stable-named RST article per reminder from `reminders.json`. |
-| `reminders2rst.main()` | Parse CLI arguments and call `convert`. |
 
 ## `output_safety.py` — destructive-operation guards
 

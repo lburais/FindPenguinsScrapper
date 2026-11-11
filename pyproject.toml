@@ -21,10 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-findpenguins = "findpenguins:main"
-aventures2rst = "aventures2rst:main"
-reminder = "reminder:main"
-reminders2rst = "reminders2rst:main"
+scrapers = "scrapers:main"
 
 [project.urls]
 Repository = "https://github.com/lburais/scrapers"
@@ -42,6 +39,7 @@ only-include = [
     "output_safety.py",
     "reminder.py",
     "reminders2rst.py",
+    "scrapers.py",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -57,6 +55,7 @@ only-include = [
     "output_safety.py",
     "reminder.py",
     "reminders2rst.py",
+    "scrapers.py",
     "README.md",
     "pyproject.toml",
 ]

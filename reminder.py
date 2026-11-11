@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Export an Apple Reminders list with the rem command."""
 
-import argparse
 import json
 from pathlib import Path
 import shutil
@@ -51,18 +50,3 @@ def export_reminders(output, list_name, all_reminders=False, force=False):
     # print(f"Exported {len(reminders)} reminder(s) to {destination}")
 
     print(f'command to run in terminal: rem export --list "{list_name}" --format json --incomplete > "{directory}/reminders.json"')
-
-
-def main():
-    """! @brief Command-line entry point: parse `--output`, `--list`, `--all`, `--force`."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", required=True, help="Output directory")
-    parser.add_argument("--list", required=True, dest="list_name", help="Reminders list name")
-    parser.add_argument("--all", action="store_true", help="Include completed reminders")
-    parser.add_argument("--force", action="store_true", help="Delete the output directory first")
-    args = parser.parse_args()
-    export_reminders(args.output, args.list_name, args.all, args.force)
-
-
-if __name__ == "__main__":
-    main()

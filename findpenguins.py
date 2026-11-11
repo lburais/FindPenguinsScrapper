@@ -4,7 +4,6 @@
 
 from urllib.parse import urljoin, urlparse
 
-import argparse
 import hashlib
 import json
 import os
@@ -300,41 +299,3 @@ def scrapper(profiles_file, output, trip=None, force=False, skip=False):
         print(f"✅ Merged XML: {merged_xml}")
 
     return collected
-
-
-# ##############################################################################################
-# __main__
-# ##############################################################################################
-
-
-def main():
-    """! @brief Command-line entry point: parse arguments and run `scrapper`."""
-    parser = argparse.ArgumentParser(
-        prog="FindPenguins scrapper",
-        description="Scrape the FindPenguins profiles of a profiles file",
-    )
-    parser.add_argument(
-        "profiles", 
-        help="JSON file mapping profile names to {id, username, password}")
-    parser.add_argument(
-        "--output", 
-        default="output", 
-        help="Archive folder for XML, GPX and media (default: output)")
-    parser.add_argument(
-        "-t", "--trip",
-        default=None,
-        help="Trip slug to scrape only (default: all trips)")
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Clear the output folder before scraping (only the --trip trip when given)")
-    parser.add_argument(
-        "--skip",
-        action="store_true",
-        help="Use saved HTML snapshots without navigating; disables --force")
-    arguments = parser.parse_args()
-    scrapper(arguments.profiles, arguments.output, arguments.trip, arguments.force, arguments.skip)
-
-
-if __name__ == "__main__":
-    main()

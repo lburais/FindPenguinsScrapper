@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generate Pelican trip and footprint articles from a FindPenguins archive."""
 
-import argparse
 from pathlib import Path
 
 from fp_archive import read_json, read_trip
@@ -33,18 +32,3 @@ def convert(output, content, trip_slug=None):
     if trip_slug and not count:
         raise ValueError(f"No archived trip found with slug: {trip_slug}")
     print(f"Generated articles for {count} trip(s)")
-
-
-def main():
-    """! @brief Command-line entry point: parse `--output`, `--content`, `--trip` and convert."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", default="output", help="FindPenguins archive directory")
-    parser.add_argument("--content", default="../website/content/articles/findpenguins",
-                        help="Pelican articles directory")
-    parser.add_argument("-t", "--trip", help="Only convert this trip slug")
-    args = parser.parse_args()
-    convert(args.output, args.content, args.trip)
-
-
-if __name__ == "__main__":
-    main()

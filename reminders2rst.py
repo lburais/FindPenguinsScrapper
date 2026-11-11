@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generate one Pelican RST article per exported reminder."""
 
-import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -66,17 +65,3 @@ def convert(output, content):
     for slug, text in articles:
         (destination / f"{slug}.rst").write_text(text, encoding="utf-8")
     print(f"Generated {len(articles)} reminder article(s) in {destination}")
-
-
-def main():
-    """! @brief Command-line entry point: parse `--output`, `--content` and convert."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", required=True, help="Reminder export directory")
-    parser.add_argument("--content", default="../website/content/articles/reminders",
-                        help="Pelican articles directory")
-    args = parser.parse_args()
-    convert(args.output, args.content)
-
-
-if __name__ == "__main__":
-    main()
