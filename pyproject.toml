@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scrapers"
+version = "0.1.0"
+description = "Archive FindPenguins trips and convert archives and reminders to Pelican articles"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4",
+    "requests",
+    "playwright",
+    "numpy",
+    "scipy",
+    "geopandas",
+    "matplotlib",
+    "shapely",
+    "Pillow",
+]
+
+[project.scripts]
+findpenguins = "findpenguins:main"
+aventures2rst = "aventures2rst:main"
+reminder = "reminder:main"
+reminders2rst = "reminders2rst:main"
+
+[project.urls]
+Repository = "https://github.com/lburais/scrapers"
+
+[tool.hatch.build.targets.wheel]
+only-include = [
+    "aventures2rst.py",
+    "findpenguins.py",
+    "fp_archive.py",
+    "fp_config.py",
+    "fp_elevation.py",
+    "fp_parsers.py",
+    "fp_utils.py",
+    "fp_writers.py",
+    "output_safety.py",
+    "reminder.py",
+    "reminders2rst.py",
+]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "aventures2rst.py",
+    "findpenguins.py",
+    "fp_archive.py",
+    "fp_config.py",
+    "fp_elevation.py",
+    "fp_parsers.py",
+    "fp_utils.py",
+    "fp_writers.py",
+    "output_safety.py",
+    "reminder.py",
+    "reminders2rst.py",
+    "README.md",
+    "pyproject.toml",
+]

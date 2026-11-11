@@ -1,9 +1,1 @@
-beautifulsoup4
-requests
-playwright
-numpy
-scipy
-geopandas
-matplotlib
-shapely
-Pillow
+-e .

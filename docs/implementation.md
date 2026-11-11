@@ -6,7 +6,7 @@ This guide documents the current CLI, scraping pipeline and output behavior.
 
 Main scripts: `findpenguins.py` and `aventures2rst.py`.
 
-Usage: `python findpenguins.py profiles.json [--output DIR] [-t SLUG] [--force] [--skip]`, followed by `python aventures2rst.py --output DIR [--content DIR] [-t SLUG]`.
+After installation, use `findpenguins profiles.json [--output DIR] [-t SLUG] [--force] [--skip]`, followed by `aventures2rst --output DIR [--content DIR] [-t SLUG]`. The original `python findpenguins.py` and `python aventures2rst.py` invocations remain available from the checkout.
 It maps profile names to objects with `id`, `username`, and optional `password`; every profile is
 scraped. `--output` (default `output`) is the archive directory for XML, GPX and downloaded media,
 the converter's `--content` (default `../website/content/articles/findpenguins`) the Pelican articles directory,
