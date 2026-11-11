@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "scrapers"
 version = "0.1.0"
-description = "Archive FindPenguins trips and convert archives and reminders to Pelican articles"
+description = "Archive trips and convert archives and reminders to Pelican articles"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
