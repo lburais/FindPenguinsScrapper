@@ -1,15 +1,17 @@
 # Data fields retrieved from FindPenguins
 
 This document lists every field the scraper collects from FindPenguins and how each one is obtained.
-Source files: [fp_utils.py](../fp_utils.py), [fp_parsers.py](../fp_parsers.py),
-[findpenguins.py](../findpenguins.py), [fp_elevation.py](../fp_elevation.py).
+Source files: [findpenguins_utils.py](../findpenguins_utils.py),
+[findpenguins_parsers.py](../findpenguins_parsers.py),
+[findpenguins.py](../findpenguins.py),
+[findpenguins_elevation.py](../findpenguins_elevation.py).
 
 ## 1. Acquisition methods
 
 | Method | Tool | Used for |
 |--------|------|----------|
-| Form login | `requests.Session` | Authentication ([`login`](../fp_utils.py)): GET `/login`, read the `_csrf_token` input, POST `_username`, `_password`, `_csrf_token`, `_remember_me` to `/login/exec`. Session cookies are reused. |
-| Headless browser | Playwright (Chromium) seeded with the session cookies ([`create_browser_page`](../fp_utils.py)) | Rendering profile, trip and footprint pages ([`load_page`](../fp_utils.py)) and the footprint popup menu. |
+| Form login | `requests.Session` | Authentication ([`login`](../findpenguins_utils.py)): GET `/login`, read the `_csrf_token` input, POST `_username`, `_password`, `_csrf_token`, `_remember_me` to `/login/exec`. Session cookies are reused. |
+| Headless browser | Playwright (Chromium) seeded with the session cookies ([`create_browser_page`](../findpenguins_utils.py)) | Rendering profile, trip and footprint pages ([`load_page`](../findpenguins_utils.py)) and the footprint popup menu. |
 | HTML parsing | BeautifulSoup on `page.content()` | Extracting fields via CSS selectors. |
 | Direct HTTP download | `requests` | GPX route, photos, videos, profile picture. |
 | Third-party API | OpenTopoData SRTM 90m | Track elevation enrichment is always performed. |
@@ -200,7 +202,7 @@ A warning is printed for footprints with no matching waypoint.
 
 ## 6. Derived data (not scraped)
 
-Built in [fp_writers.py](../fp_writers.py) from the data above:
+Built in [findpenguins_writers.py](../findpenguins_writers.py) from the data above:
 
 | Data | How |
 |------|-----|

@@ -1,9 +1,4 @@
-"""! @file fp_parsers.py
-@brief Parsers for profile, trip, and footprint data extraction.
-
-This module converts HTML and popup UI fragments into normalized Python
-dictionaries used by the writer layer.
-"""
+"""Parsers for FindPenguins profile, trip, and footprint pages."""
 
 import datetime
 import json
@@ -13,8 +8,82 @@ import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
-from fp_config import BASE_URL, HEADERS
-from fp_utils import clean_text, extract_expandable_text, extract_private_references, download_image, download_video, download_file, load_page, gpx_tag, strip_leading_flag, snapshot_path, SnapshotError
+from findpenguins_config import BASE_URL, HEADERS
+from findpenguins_utils import download_image, download_video, download_file, load_page, snapshot_path, SnapshotError
+from common_utils import clean_text, strip_leading_flag, extract_private_references, gpx_tag
+
+def extract_expandable_text(node):
+    """! @brief Extract normalized text from footprint expandable HTML blocks.
+    @param node BeautifulSoup node to transform.
+    @return Plain-text rendering with line break semantics preserved.
+    """
+    if not node:
+        return ""
+
+    parsed = BeautifulSoup(str(node), "html.parser")
+    root = parsed.find()
+    if not root:
+        return ""
+
+    def strip_scheme(url):
+        """! @brief Remove URL scheme and protocol-relative prefix.
+        @param url Input URL.
+        @return URL body without leading scheme.
+        """
+        if not url:
+            return ""
+        cleaned = url.strip()
+        cleaned = re.sub(r"^//", "", cleaned)
+        return re.sub(r"^https?://", "", cleaned, flags=re.IGNORECASE)
+
+    def to_https_url(url):
+        """! @brief Normalize any URL-ish text to explicit https URL.
+        @param url Input URL-like value.
+        @return Normalized https URL or empty string.
+        """
+        body = strip_scheme(url)
+        if not body:
+            return ""
+        return "https://" + body
+
+    for dots in root.select(".dots"):
+        prev_a = dots.find_previous("a")
+        next_a = dots.find_next("a")
+        if not prev_a or not next_a:
+            continue
+        prev_href = prev_a.get("href", "")
+        next_href = next_a.get("href", "")
+        prev_body = strip_scheme(prev_href)
+        next_body = strip_scheme(next_href)
+        if not (prev_body and next_body):
+            continue
+        merged_body = prev_body + next_body
+        merged_url = "https://" + merged_body
+        prev_a["href"] = merged_url
+        prev_a.string = merged_url
+        next_a.decompose()
+
+    for a in root.select("a[href]"):
+        href = a.get("href", "")
+        if re.match(r"^(https?://|//)", href.strip(), flags=re.IGNORECASE):
+            normalized = to_https_url(href)
+            if normalized:
+                a.string = normalized
+
+    for tag in root.select(".readMore, .dots, i.icon-font"):
+        tag.decompose()
+
+    for br in root.find_all("br"):
+        br.replace_with("\n")
+    for dbl in root.select(".double-break"):
+        dbl.replace_with("\n\n")
+
+    text = root.get_text(separator="", strip=False)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def apply_gpx_coordinates(footprints, gpx_path):
@@ -629,3 +698,5 @@ def parse_trip(page, session, soup, trip_dir, photos_dir, skip=False):
     apply_gpx_coordinates(footprints, os.path.join(gpx_dir, os.path.basename(trip_dir) + ".gpx"))
     apply_day_numbers(footprints)
     return footprints
+
+

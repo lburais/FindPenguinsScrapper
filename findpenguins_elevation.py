@@ -1,8 +1,4 @@
-"""! @file fp_elevation.py
-@brief Elevation download, smoothing and gain/loss helpers for GPX track points.
-
-Points are dictionaries with `lat`, `lon` and (once fetched) `ele` keys.
-"""
+"""Elevation download, smoothing and gain/loss helpers for GPX track points."""
 
 import requests
 import time
@@ -11,10 +7,6 @@ from math import radians, sin, cos, sqrt, atan2
 OPENTOPODATA_URL = "https://api.opentopodata.org/v1/srtm90m"
 COPERNICUS_URL = "https://api.open-meteo.com/v1/elevation"
 
-
-# ---------------------------------------------------------
-# Elevation API
-# ---------------------------------------------------------
 
 def fetch_elevations(points, source="opentopodata"):
     """! @brief Fill `ele` on each point from an elevation API, 100 points per request.
@@ -74,10 +66,6 @@ def fetch_elevations(points, source="opentopodata"):
             p["ele"] = e["elevation"]
 
 
-# ---------------------------------------------------------
-# Smooth elevations
-# ---------------------------------------------------------
-
 def smooth(points):
     """! @brief Smooth `ele` values in place with a Savitzky-Golay filter (order 2, window <= 31).
     @param points List of dicts with `ele`; left untouched when fewer than 11 points.
@@ -103,10 +91,6 @@ def smooth(points):
         p["ele"] = float(v)
 
 
-# ---------------------------------------------------------
-# Gain/Loss
-# ---------------------------------------------------------
-
 def gain_loss(points):
     """! @brief Compute cumulative elevation gain and loss along a track.
     @param points Ordered list of dicts with `ele`.
@@ -126,3 +110,5 @@ def gain_loss(points):
             loss -= d
 
     return gain, loss
+
+

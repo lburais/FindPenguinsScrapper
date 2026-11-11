@@ -3,8 +3,8 @@
 
 from pathlib import Path
 
-from fp_archive import read_json, read_trip
-from fp_writers import build_trip_rst
+from aventures_archive import read_json, read_trip
+from aventures_writers import build_trip_rst
 
 
 def convert(output, content, trip_slug=None):

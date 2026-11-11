@@ -12,16 +12,16 @@ import shutil
 import xml.etree.ElementTree as ET
 import requests
 
-from fp_config import BASE_URL
-from fp_utils import login, create_browser_page, load_page, download_image, SnapshotError
-from fp_parsers import parse_profile, parse_trips, parse_trip, parse_trip_insights, parse_trip_image
-from fp_writers import (
+from findpenguins_config import BASE_URL
+from findpenguins_utils import login, create_browser_page, load_page, download_image, SnapshotError
+from findpenguins_parsers import parse_profile, parse_trips, parse_trip, parse_trip_insights, parse_trip_image
+from findpenguins_writers import (
     build_trip_gpx,
     save_trip_route_map,
     build_user_xml,
     build_merged_xml,
 )
-from fp_archive import write_profile, write_trip
+from findpenguins_archive import write_profile, write_trip
 from output_safety import validate_clear_directory, validate_component
 
 ## Default run settings; override them with a "settings" entry in the profiles file.

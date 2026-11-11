@@ -14,14 +14,17 @@ This document describes the current data flow and generated outputs.
 - `scrapers.py`: CLI argument parsing and program dispatch.
 - `findpenguins.py`: archive orchestration.
 - `output_safety.py`: guards for `--force` directory clearing and path components (trip slugs).
-- `fp_archive.py`: portable per-profile and per-trip JSON manifests.
+- `findpenguins_archive.py`: write portable per-profile and per-trip JSON manifests.
+- `aventures_archive.py`: read manifests and resolve archive-relative media paths.
 - `aventures2rst.py`: independent archive-to-Pelican conversion.
 - `reminder.py` / `reminders2rst.py`: `rem export` JSON export and per-reminder Pelican articles.
-- `fp_config.py`: site endpoints, request headers and XML namespaces.
-- `fp_utils.py`: login, Playwright setup, page loading, downloads and serialization helpers.
-- `fp_parsers.py`: profile, trip, insight and footprint extraction.
-- `fp_writers.py`: XML/GPX serialization, Pelican RST articles and route-map WebP images.
-- `fp_elevation.py`: OpenTopoData SRTM90m enrichment for GPX track-point elevations.
+- `findpenguins_config.py`: FindPenguins endpoints and request headers; `common_config.py`: XML namespaces.
+- `findpenguins_utils.py`: login, Playwright setup, page loading and downloads.
+- `findpenguins_parsers.py`: profile, trip, insight and footprint extraction.
+- `findpenguins_writers.py`: XML/GPX serialization and route-map WebP images.
+- `findpenguins_elevation.py`: OpenTopoData SRTM90m enrichment for GPX track-point elevations.
+- `aventures_writers.py`: Pelican RST articles and country maps.
+- `common_utils.py`: shared XML, text and image helpers.
 
 ## Runtime Data Flow
 
@@ -85,8 +88,8 @@ Trips without a valid GPX track do not get a route map.
 
 ## Extensibility
 
-- Add extraction logic in `fp_parsers.py`.
-- Map new fields to XML, GPX, HTML or RST in `fp_writers.py`.
+- Add extraction logic in `findpenguins_parsers.py`.
+- Map new fields to XML/GPX in `findpenguins_writers.py` or RST in `aventures_writers.py`.
 - Add CLI behavior in `scrapers.py` and FindPenguins orchestration in `findpenguins.py`.
 - Every function is documented in [`api-reference.md`](./api-reference.md); keep it in sync with the
   Doxygen-style docstrings (`! @brief`, `@param`, `@return`) when adding or changing functions.

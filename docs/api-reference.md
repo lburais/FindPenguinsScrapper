@@ -41,21 +41,27 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `validate_clear_directory(directory)` | Reject symlinks, filesystem root, cwd, the project directory and the home directory. |
 | `validate_component(value)` | Reject empty values, `.`/`..` and anything containing path separators. |
 
-## `fp_archive.py` — portable JSON manifests
+## `findpenguins_archive.py` — portable JSON manifest writing
 
 | Function | Purpose |
 |---|---|
 | `_write_json(path, value)` | Atomic JSON write (temporary file then rename). |
 | `write_profile(profile_dir, user, settings)` | Write `profile.json` (user and image sizes). |
 | `write_trip(output, trip_dir, trip)` | Write `trip.json` with media paths relative to the archive; rejects media outside it. |
+
+## `aventures_archive.py` — portable JSON manifest reading
+
+| Function | Purpose |
+|---|---|
 | `read_json(path)` | Load a manifest and check it is a version 1 object. |
 | `read_trip(output, path)` | Load `trip.json` and resolve media paths against the (possibly moved) archive root. |
 
-## `fp_config.py` — constants
+## `findpenguins_config.py` and `common_config.py` — constants
 
-`BASE_URL`, `LOGIN_PAGE`, `LOGIN_POST`, `HEADERS`, `GPX_NS`, `XSI_NS`. No functions.
+`findpenguins_config.py`: `BASE_URL`, `LOGIN_PAGE`, `LOGIN_POST`, `HEADERS`.
+`common_config.py`: `GPX_NS`, `XSI_NS`. No functions.
 
-## `fp_elevation.py` — elevations
+## `findpenguins_elevation.py` — elevations
 
 | Function | Purpose |
 |---|---|
@@ -63,10 +69,11 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `smooth(points)` | Savitzky-Golay smoothing of `ele` in place (skipped under 11 points). |
 | `gain_loss(points)` | Cumulative `(gain, loss)` along a track. |
 
-## `fp_parsers.py` — page parsing
+## `findpenguins_parsers.py` — page parsing
 
 | Function | Purpose |
 |---|---|
+| `extract_expandable_text(node)` | Extract normalized text of expandable blocks. |
 | `apply_gpx_coordinates(footprints, gpx_path)` | Overwrite footprint coordinates with the matching GPX waypoints. |
 | `apply_day_numbers(footprints)` | Set each footprint's `day` relative to the first footprint date. |
 | `click_footprint_menu(page)` | Read weather/location metadata from the footprint popup menu. |
@@ -77,7 +84,7 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `parse_trip_image(soup)` | Extract the trip cover image URL. |
 | `parse_trip(page, session, soup, trip_dir, photos_dir, skip=False)` | Parse a trip in depth and collect enriched footprints and media. |
 
-## `fp_utils.py` — shared helpers
+## `common_utils.py` — shared helpers
 
 | Function | Purpose |
 |---|---|
@@ -87,12 +94,16 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `clean_text(t)` | Normalize whitespace. |
 | `strip_leading_flag(text)` | Remove a leading flag emoji. |
 | `extract_private_references(text)` | Extract URL references from private notes. |
-| `extract_expandable_text(node)` | Extract normalized text of expandable blocks. |
-| `normalize_photo_url(img_url)` | Promote thumbnail URLs to large images. |
 | `to_webp(path)` | Convert an image to lossless WebP and remove the source. |
 | `variant_path(path, suffix)` | Path of a size variant (`a.webp` → `a_large.webp`). |
 | `make_variant(path, suffix, max_size)` | Create a downscaled lossless WebP copy. |
 | `shrink_image(path, max_size)` | Downscale a WebP in place. |
+
+## `findpenguins_utils.py` — scraper utilities
+
+| Function or class | Purpose |
+|---|---|
+| `normalize_photo_url(img_url)` | Promote thumbnail URLs to large images. |
 | `download_image(img_url, dest_folder, prefix="img", filename=None, refresh=False)` | Download an image. |
 | `download_video(video_url, dest_folder, prefix="vid")` | Download a video (skipped if present). |
 | `download_file(file_url, dest_folder, prefix="file", default_ext="")` | Download an attachment such as GPX or PDF. |
@@ -106,7 +117,7 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `load_page(page, page_url, outputdir, skip=False, title="", footprint_id="")` | Load (or read from snapshot) a page and return BeautifulSoup. |
 | `get_emoji_flag(code)` | Emoji flag for a country or subdivision code. |
 
-## `fp_writers.py` — XML, GPX, maps and RST
+## `findpenguins_writers.py` — XML, GPX and route maps
 
 | Function | Purpose |
 |---|---|
@@ -118,6 +129,13 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `build_trip_gpx(gpx_path, user_data, trip, footprints)` | Build/update the enriched trip GPX. |
 | `build_user_xml(user_data, trips)` | Build the per-profile XML index. |
 | `build_merged_xml(profiles_data)` | Build the XML index merging several profiles. |
+| `_mercator_coordinates(lon, lat)` | Project to Web Mercator meters. |
+| `save_trip_route_map(gpx_path, footprints, output_image, background="transparent", show_footprint_bubbles=False)` | Render the 1200×800 route map. |
+
+## `aventures_writers.py` — Pelican articles and country maps
+
+| Function | Purpose |
+|---|---|
 | `_write_rst(path, content)` | Write an RST file, creating folders. |
 | `_references_by_search(references)` | Case-insensitive lookup of reference labels. |
 | `_encode_url(url)` | Percent-encode unsafe URL characters. |
@@ -125,8 +143,6 @@ docstrings of each function (`! @brief`, `@param`, `@return`).
 | `_copy_image(image_path, destination_dir, sizes, variants)` | Copy an image and create its variants. |
 | `_load_country_boundaries()` | Load and cache Natural Earth boundaries. |
 | `save_full_country_map(lat, lon, padding_ratio=0.1, output_image="map_country.png")` | Render the country/region map of a footprint. |
-| `_mercator_coordinates(lon, lat)` | Project to Web Mercator meters. |
-| `save_trip_route_map(gpx_path, footprints, output_image, background="transparent", show_footprint_bubbles=False)` | Render the 1200×800 route map. |
 | `_footprint_gpx_fields(footprint, footprint_dir, sizes, trip_days="")` | Footprint fields used as Pelican metadata. |
 | `_rst_text(value)` | Escape text for RST. |
 | `_rst_metadata(**fields)` | Format Pelican metadata fields. |

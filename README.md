@@ -35,12 +35,16 @@ Le projet est structuré de manière hautement modulaire :
 ├── output_safety.py         # Garde-fous pour --force et les composants de chemin
 ├── build_scrapers.sh        # Construction de l'exécutable PyApp
 ├── docs/                    # Documentation technique (dont api-reference.md)
-├── fp_archive.py            # Manifestes JSON portables
-├── fp_config.py             # Configuration centrale (endpoints, headers, namespaces)
-├── fp_utils.py              # Utilitaires (navigation Playwright, gestion des cookies, téléchargements)
-├── fp_parsers.py            # Extraction des données et parsing DOM (BeautifulSoup)
-├── fp_writers.py            # Sérialisation des sorties (génération GPX, XML et articles Pelican RST)
-├── fp_elevation.py          # Enrichissement topographique des points de trace GPX
+├── findpenguins_archive.py  # Écriture des manifestes JSON portables
+├── findpenguins_config.py   # Endpoints et en-têtes HTTP FindPenguins
+├── findpenguins_utils.py    # Navigation Playwright, cookies et téléchargements
+├── findpenguins_parsers.py  # Extraction des données et parsing DOM
+├── findpenguins_writers.py  # Génération GPX, XML et cartes de route
+├── findpenguins_elevation.py # Enrichissement topographique des traces GPX
+├── aventures_archive.py    # Lecture des manifestes pour la conversion
+├── aventures_writers.py    # Génération des articles Pelican et cartes de pays
+├── common_config.py        # Espaces de noms XML partagés
+├── common_utils.py         # Utilitaires XML, texte et images partagés
 └── profiles.json            # Profils, identifiants et réglages
 ```
 

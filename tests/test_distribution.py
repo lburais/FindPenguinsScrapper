@@ -14,8 +14,10 @@ import zipfile
 
 
 MODULES = {
-    "aventures2rst.py", "findpenguins.py", "fp_archive.py", "fp_config.py",
-    "fp_elevation.py", "fp_parsers.py", "fp_utils.py", "fp_writers.py",
+    "aventures2rst.py", "findpenguins.py", "aventures_archive.py",
+    "aventures_writers.py", "common_config.py", "common_utils.py",
+    "findpenguins_archive.py", "findpenguins_config.py", "findpenguins_elevation.py",
+    "findpenguins_parsers.py", "findpenguins_utils.py", "findpenguins_writers.py",
     "output_safety.py", "reminder.py", "reminders2rst.py", "scrapers.py",
 }
 COMMANDS = ("findpenguins", "aventures2rst", "reminder", "reminders2rst")
@@ -68,6 +70,7 @@ class DistributionTests(unittest.TestCase):
             source_files = {name.split("/", 1)[-1] for name in archive.getnames()}
         for files in (wheel_files, source_files):
             self.assertTrue(MODULES <= files, MODULES - files)
+            self.assertFalse(any(Path(name).name.startswith("fp_") for name in files))
             self.assertNotIn("profiles.json", files)
             self.assertNotIn("franklin.json", files)
 

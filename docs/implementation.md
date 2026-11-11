@@ -33,7 +33,7 @@ An optional `settings` entry configures the rest:
 
 ## Scraping and Serialization Flow
 
-1. `login(username, password)` in `fp_utils.py` logs in with a `requests.Session`.
+1. `login(username, password)` in `findpenguins_utils.py` logs in with a `requests.Session`.
 2. `create_browser_page(session)` starts Playwright Chromium and transfers the session cookies.
 3. `parse_profile` and `parse_trips` load profile metadata and the selected trip list.
 4. For each trip, `parse_trip` loads all footprint pages and downloads route GPX and media.
