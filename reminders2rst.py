@@ -8,10 +8,21 @@ from pathlib import Path
 
 
 def _metadata(value):
+    """! @brief Collapse whitespace/newlines so a value fits on one RST metadata line."""
     return " ".join(str(value).split())
 
 
 def convert(output, content):
+    """! @brief Write one RST article per reminder found in `<output>/reminders.json`.
+
+    Slugs are `reminder-` plus the SHA-256 of the reminder id, so reruns are stable.
+    Bodies are emitted as an indented literal block. Everything is validated before
+    any file is written.
+    @param output Directory containing `reminders.json`.
+    @param content Pelican articles destination directory (created if needed).
+    @return None
+    @throws ValueError On a malformed reminder, missing id/name or duplicate id.
+    """
     source = Path(output) / "reminders.json"
     with source.open(encoding="utf-8") as handle:
         reminders = json.load(handle)
@@ -58,6 +69,7 @@ def convert(output, content):
 
 
 def main():
+    """! @brief Command-line entry point: parse `--output`, `--content` and convert."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, help="Reminder export directory")
     parser.add_argument("--content", default="../website/content/articles/reminders",

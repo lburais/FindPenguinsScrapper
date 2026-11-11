@@ -101,9 +101,11 @@ footprint links. Country names are individual tags; transport mode distances are
 
 ## Operational Notes
 
-- `reminder.py --list NAME --output DIR [--all] [--force]` invokes macOS `rem export`;
-  incomplete reminders are selected by default. `--force` clears the destination only after a
-  successful export. `reminders2rst.py --output DIR [--content DIR]` writes one stable-named
+- `reminder.py --list NAME --output DIR [--all] [--force]` currently prepares the output directory
+  (`--force` clears it after `output_safety.validate_clear_directory`) and prints the
+  `rem export --list NAME --format json --incomplete > DIR/reminders.json` command to run in a
+  terminal; the direct `rem` invocation is commented out in `export_reminders`, so `--all` has no
+  effect for now. `reminders2rst.py --output DIR [--content DIR]` writes one stable-named
   article per reminder, category `reminder`. Neither converter deletes stale articles.
 
 - Playwright requires an installed Chromium browser; install it with

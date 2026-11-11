@@ -1,3 +1,7 @@
+"""! @file findpenguins.py
+@brief Scrape FindPenguins profiles into an archive of XML, GPX, media and manifests.
+"""
+
 from urllib.parse import urljoin, urlparse
 
 import argparse
@@ -304,6 +308,7 @@ def scrapper(profiles_file, output, trip=None, force=False, skip=False):
 
 
 def main():
+    """! @brief Command-line entry point: parse arguments and run `scrapper`."""
     parser = argparse.ArgumentParser(
         prog="FindPenguins scrapper",
         description="Scrape the FindPenguins profiles of a profiles file",

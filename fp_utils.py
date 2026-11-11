@@ -485,6 +485,7 @@ def snapshot_path(page_url, outputdir, suffix="html"):
 
 
 def _snapshot_slug(text):
+    """Return `text` as a lowercase ASCII, hyphen-separated slug (used to find legacy snapshots)."""
     ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     return re.sub(r"[^A-Za-z0-9]+", "-", ascii_text).strip("-").lower()
 
@@ -545,9 +546,9 @@ def load_page(page, page_url, outputdir, skip=False, title="", footprint_id=""):
     return soup
 
 def get_emoji_flag( code ):
-    """! @brief Get emoji flag.
-    @param flag code.
-    @return emoji flag.
+    """! @brief Convert a FindPenguins flag code into an emoji flag.
+    @param code Two-letter country code (`fr`) or subdivision code (`gb-sc`).
+    @return Regional-indicator flag, or a tag-sequence flag for subdivisions; None if the code is neither form.
     """
 
     if len(code) == 2:

@@ -11,7 +11,8 @@ This document describes the current data flow and generated outputs.
 
 ## Main Components
 
-- `findpenguins.py` / `findpenguins_scrapper.py`: CLI and archive orchestration.
+- `findpenguins.py`: CLI and archive orchestration.
+- `output_safety.py`: guards for `--force` directory clearing and path components (trip slugs).
 - `fp_archive.py`: portable per-profile and per-trip JSON manifests.
 - `aventures2rst.py`: independent archive-to-Pelican conversion.
 - `reminder.py` / `reminders2rst.py`: `rem export` JSON export and per-reminder Pelican articles.
@@ -85,6 +86,8 @@ Trips without a valid GPX track do not get a route map.
 
 - Add extraction logic in `fp_parsers.py`.
 - Map new fields to XML, GPX, HTML or RST in `fp_writers.py`.
-- Add CLI behavior and orchestration in `findpenguins_scrapper.py`.
+- Add CLI behavior and orchestration in `findpenguins.py`.
+- Every function is documented in [`api-reference.md`](./api-reference.md); keep it in sync with the
+  Doxygen-style docstrings (`! @brief`, `@param`, `@return`) when adding or changing functions.
 - Update [`data-fields.md`](./data-fields.md) and [`xml-gpx-structure.md`](./xml-gpx-structure.md)
   when changing exported fields or schemas.

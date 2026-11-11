@@ -10,6 +10,17 @@ from output_safety import validate_clear_directory
 
 
 def export_reminders(output, list_name, all_reminders=False, force=False):
+    """! @brief Prepare the output directory and print the `rem export` command to run.
+
+    The direct `rem` invocation is currently commented out; the user runs the printed
+    command in a terminal to produce `reminders.json`.
+    @param output Output directory (created if needed).
+    @param list_name Apple Reminders list name.
+    @param all_reminders Intended to include completed reminders (unused while export is disabled).
+    @param force Delete the output directory first, after safety validation.
+    @return None
+    @throws ValueError When `force` targets an unsafe path or a non-directory.
+    """
     # command = ["rem", "export", "--list", list_name, "--format", "json"]
     # if not all_reminders:
     #     command.append("--incomplete")
@@ -43,6 +54,7 @@ def export_reminders(output, list_name, all_reminders=False, force=False):
 
 
 def main():
+    """! @brief Command-line entry point: parse `--output`, `--list`, `--all`, `--force`."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, help="Output directory")
     parser.add_argument("--list", required=True, dest="list_name", help="Reminders list name")

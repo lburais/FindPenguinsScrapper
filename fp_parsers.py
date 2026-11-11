@@ -51,6 +51,7 @@ def apply_day_numbers(footprints):
     @return None
     """
     def to_date(value):
+        """Parse the leading ISO date of `value`, or return None."""
         try:
             return datetime.date.fromisoformat(str(value or "").strip()[:10])
         except ValueError:
@@ -394,6 +395,7 @@ def parse_trip_insights(page, trip_url, trip_dir, skip=False):
         insights["description"] = extract_expandable_text(description_el)
 
     def to_km(text):
+        """Extract the first number of `text` as a digits-only kilometre string ('' if none)."""
         match = re.search(r"\d[\d.,\s]*", text or "")
         return re.sub(r"[^\d]", "", match.group(0)) if match else ""
 

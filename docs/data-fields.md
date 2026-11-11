@@ -2,7 +2,7 @@
 
 This document lists every field the scraper collects from FindPenguins and how each one is obtained.
 Source files: [fp_utils.py](../fp_utils.py), [fp_parsers.py](../fp_parsers.py),
-[findpenguins_scrapper.py](../findpenguins_scrapper.py), [fp_elevation.py](../fp_elevation.py).
+[findpenguins.py](../findpenguins.py), [fp_elevation.py](../fp_elevation.py).
 
 ## 1. Acquisition methods
 

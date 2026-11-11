@@ -27,11 +27,12 @@ Le scraper FindPenguins orchestre l'authentification et télécharge les donnée
 Le projet est structuré de manière hautement modulaire :
 
 ```text
-├── findpenguins.py          # Extraction FindPenguins
+├── findpenguins.py          # CLI et orchestrateur FindPenguins
 ├── aventures2rst.py         # Conversion des archives FindPenguins en articles Pelican
 ├── reminder.py              # Export Apple Reminders via rem
 ├── reminders2rst.py         # Conversion des rappels en articles Pelican
-├── findpenguins_scrapper.py # Orchestrateur FindPenguins
+├── output_safety.py         # Garde-fous pour --force et les composants de chemin
+├── docs/                    # Documentation technique (dont api-reference.md)
 ├── fp_archive.py            # Manifestes JSON portables
 ├── fp_config.py             # Configuration centrale (endpoints, headers, namespaces)
 ├── fp_utils.py              # Utilitaires (navigation Playwright, gestion des cookies, téléchargements)
@@ -41,7 +42,8 @@ Le projet est structuré de manière hautement modulaire :
 └── profiles.json            # Profils, identifiants et réglages
 ```
 
-La documentation technique complémentaire se trouve dans [`docs/`](docs/).
+La documentation technique complémentaire se trouve dans [`docs/`](docs/), notamment la
+[référence de toutes les fonctions](docs/api-reference.md).
 
 ---
 
@@ -117,10 +119,13 @@ python reminder.py --list "Ma liste" --output reminders-output [--all] [--force]
 python reminders2rst.py --output reminders-output [--content ../website/content/articles/reminders]
 ```
 
-Sans `--all`, seuls les rappels incomplets sont exportés. `--all` inclut les rappels
-terminés. L'export est enregistré dans `reminders.json` ; sans `--force`, les autres
-fichiers du dossier sont conservés, mais ce fichier est remplacé. Avec `--force`,
-le dossier de sortie est supprimé après un export réussi. Chaque rappel donne un
+**État actuel :** `reminder.py` prépare le dossier de sortie (avec `--force`, il est
+supprimé après validation de sécurité) puis **affiche** la commande
+`rem export --list "…" --format json --incomplete > <dossier>/reminders.json` à exécuter
+dans un terminal ; l'appel direct à `rem` est désactivé (commenté) dans `export_reminders`,
+et `--all` n'a donc pas encore d'effet. `reminders2rst.py` lit ensuite `reminders.json`.
+Une fois l'appel direct réactivé, sans `--all` seuls les rappels incomplets seront exportés.
+Chaque rappel donne un
 article à nom stable avec `Category: reminder` ; les notes sont rendues en texte
 littéral. La conversion ne supprime pas les articles devenus périmés.
 L'export utilise `rem export` ; macOS peut demander l'autorisation d'accès aux

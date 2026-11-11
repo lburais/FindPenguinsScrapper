@@ -9,6 +9,13 @@ from fp_writers import build_trip_rst
 
 
 def convert(output, content, trip_slug=None):
+    """! @brief Regenerate Pelican RST articles from the manifests of an archive.
+    @param output Archive directory containing `*/profile.json` and `*/*/trip.json`.
+    @param content Pelican articles destination directory.
+    @param trip_slug Optional trip slug; when given only that trip is converted.
+    @return None
+    @throws ValueError When no profile manifest exists or the requested slug is not found.
+    """
     root = Path(output)
     profiles = sorted(root.glob("*/profile.json"))
     if not profiles:
@@ -29,6 +36,7 @@ def convert(output, content, trip_slug=None):
 
 
 def main():
+    """! @brief Command-line entry point: parse `--output`, `--content`, `--trip` and convert."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="output", help="FindPenguins archive directory")
     parser.add_argument("--content", default="../website/content/articles/findpenguins",
